@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2020 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -36,19 +36,20 @@ int mkdirp(const char *path);
  * The two must both agree on the file layout for meta-tiling
  * to work
  */
-void xyz_to_path(char *path, size_t len, const char *tile_dir, const char *xmlconfig, int x, int y, int z);
-
 int path_to_xyz(const char *tilepath, const char *path, char *xmlconfig, int *px, int *py, int *pz);
 
 #ifdef METATILE
 /* New meta-tile storage functions */
 /* Returns the path to the meta-tile and the offset within the meta-tile */
+int xyzo_to_meta(char *path, size_t len, const char *tile_dir, const char *xmlconfig, const char *options, int x, int y, int z);
 int xyz_to_meta(char *path, size_t len, const char *tile_dir, const char *xmlconfig, int x, int y, int z);
+#else
+void xyz_to_path(char *path, size_t len, const char *tile_dir, const char *xmlconfig, int x, int y, int z);
 #endif
 
 #ifdef __cplusplus
 }
-#endif
 
+#endif
 
 #endif

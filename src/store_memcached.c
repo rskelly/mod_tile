@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2020 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -266,6 +266,7 @@ static int memcached_close_storage(struct storage_backend * store)
 	memcached_free(store->storage_ctx);
 	return 0;
 }
+
 #endif //Have memcached
 
 struct storage_backend * init_storage_memcached(const char * connection_string)
@@ -284,7 +285,19 @@ struct storage_backend * init_storage_memcached(const char * connection_string)
 		return NULL;
 	}
 
+	if (strcmp(connection_string, "memcached://")) {
+		int connection_string_len = strnlen(connection_string, PATH_MAX);
+		connection_str = malloc(sizeof(char) * connection_string_len);
+		// The length of the string "memcached://" is 12
+		snprintf(connection_str, connection_string_len - 2, "--server=%.*s", connection_string_len - 12, connection_string + 12);
+	}
+
+	g_logger(G_LOG_LEVEL_DEBUG, "init_storage_memcached: Creating memcached ctx with options '%s'", connection_str);
 	ctx = memcached(connection_str, strlen(connection_str));
+
+	if (strcmp(connection_string, "memcached://")) {
+		free(connection_str);
+	}
 
 	if (ctx == NULL) {
 		g_logger(G_LOG_LEVEL_ERROR, "init_storage_memcached: Failed to create memcached ctx");

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2020 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -22,12 +22,11 @@
 extern "C" {
 #endif
 
-#include "store.h"
-
-struct storage_backend * init_storage_null();
+struct storage_backend *init_storage_null();
 
 #ifdef __cplusplus
 }
+
 #endif
 
 #endif /* STORE_NULL_H */

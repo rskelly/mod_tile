@@ -1,3 +1,5 @@
+#ifndef CONFIG_H
+#define CONFIG_H
 /* Define to 1 if you have the functions. */
 #cmakedefine HAVE_DAEMON @HAVE_DAEMON@
 #cmakedefine HAVE_GETLOADAVG @HAVE_GETLOADAVG@
@@ -14,5 +16,15 @@
 #cmakedefine HAVE_LIBMEMCACHED @HAVE_LIBMEMCACHED@
 #cmakedefine HAVE_LIBRADOS @HAVE_LIBRADOS@
 
+/* Define configuration options. */
+#cmakedefine MAPNIK_FONTS_DIR "@MAPNIK_FONTS_DIR@"
+#cmakedefine MAPNIK_FONTS_DIR_RECURSE "@MAPNIK_FONTS_DIR_RECURSE@"
+#cmakedefine MAPNIK_PLUGINS_DIR "@MAPNIK_PLUGINS_DIR@"
+#cmakedefine RENDERD_CONFIG "@RENDERD_CONFIG@"
+#cmakedefine RENDERD_PIDFILE "@RENDERD_PIDFILE@"
+#cmakedefine RENDERD_SOCKET "@RENDERD_SOCKET@"
+#cmakedefine RENDERD_TILE_DIR "@RENDERD_TILE_DIR@"
+
 /* Version number of project */
 #cmakedefine VERSION "@VERSION@"
+#endif

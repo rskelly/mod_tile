@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 # Define mod_tile version number
-m4_define([mod_tile_version], [0.6.1])
+m4_define([mod_tile_version], [0.8.1])
 
 AC_PREREQ([2.61])
 AX_CONFIG_NICE
@@ -11,14 +11,15 @@ AC_INIT([mod_tile],
         [http://trac.openstreetmap.org])
 AM_INIT_AUTOMAKE([subdir-objects])
 LT_INIT
-AC_CONFIG_SRCDIR([src/convert_meta.c])
+AC_CONFIG_SRCDIR([src/mod_tile.c])
 AC_CONFIG_HEADERS([includes/config.h])
 AC_CONFIG_MACRO_DIR([m4])
 
 # Checks for programs.
-AC_PROG_CXX
 AC_PROG_CC
 AC_PROG_CC_C99
+AC_PROG_CXX
+AC_PROG_RANLIB
 
 dnl Find C++ compiler
 AC_CHECK_PROG(HAVE_CXX, $CXX, yes, no)

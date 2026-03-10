@@ -7,7 +7,7 @@
 # 	config   (required)
 # 	autoconf (optional - used by munin-config)
 #
-# Copyright (c) 2007 - 2020 by mod_tile contributors (see AUTHORS file)
+# Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -46,11 +46,11 @@ if [ "$1" = "config" ]; then
   exit 0
 fi
 
-reqlength=$(sed -e '/^ReqQueueLength/!d' -e 's/.*: //' -e q /run/renderd/renderd.stats)
-reqpriolength=$(sed -e '/^ReqPrioQueueLength/!d' -e 's/.*: //' -e q /run/renderd/renderd.stats)
-reqpriolowlength=$(sed -e '/^ReqLowQueueLength/!d' -e 's/.*: //' -e q /run/renderd/renderd.stats)
-reqbulklength=$(sed -e '/^ReqBulkQueueLength/!d' -e 's/.*: //' -e q /run/renderd/renderd.stats)
-dirtlength=$(sed -e '/^DirtQueueLength/!d' -e 's/.*: //' -e q /run/renderd/renderd.stats)
+reqlength=$(sed -e '/^ReqQueueLength/!d' -e 's/.*: //' -e q ${RENDERD_STATS:-/run/renderd/renderd.stats})
+reqpriolength=$(sed -e '/^ReqPrioQueueLength/!d' -e 's/.*: //' -e q ${RENDERD_STATS:-/run/renderd/renderd.stats})
+reqpriolowlength=$(sed -e '/^ReqLowQueueLength/!d' -e 's/.*: //' -e q ${RENDERD_STATS:-/run/renderd/renderd.stats})
+reqbulklength=$(sed -e '/^ReqBulkQueueLength/!d' -e 's/.*: //' -e q ${RENDERD_STATS:-/run/renderd/renderd.stats})
+dirtlength=$(sed -e '/^DirtQueueLength/!d' -e 's/.*: //' -e q ${RENDERD_STATS:-/run/renderd/renderd.stats})
 
 echo "reqPrio.value " $reqpriolength
 echo "req.value " $reqlength

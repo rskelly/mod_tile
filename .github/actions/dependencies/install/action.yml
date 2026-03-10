@@ -1,5 +1,39 @@
 ---
 inputs:
+  centos-stream-build-dependencies:
+    default: >-
+      cairo-devel
+      glib2-devel
+      httpd-devel
+      iniparser-devel
+      libcurl-devel
+      libmemcached-devel
+      librados2-devel
+  centos-stream-test-dependencies:
+    default: >-
+      httpd
+      jq
+      lcov
+      memcached
+      procps
+  centos-stream-mapnik-build-dependencies:
+    default: >-
+      boost-devel
+      cmake
+      freetype-devel
+      gdal-devel
+      git
+      harfbuzz-devel
+      libicu-devel
+      libjpeg-devel
+      libpng-devel
+      libtiff-devel
+      libwebp-devel
+      libxml2-devel
+      postgresql-devel
+      proj-devel
+      sqlite-devel
+      zlib-devel
   debian-build-dependencies:
     default: >-
       apache2-dev
@@ -13,9 +47,10 @@ inputs:
     default: >-
       cmake
       git
-      libboost-filesystem-dev
+      libboost-context-dev
       libboost-program-options-dev
       libboost-regex-dev
+      libboost-url-dev
       libfreetype6-dev
       libgdal-dev
       libharfbuzz-dev
@@ -31,6 +66,10 @@ inputs:
   debian-test-dependencies:
     default: >-
       apache2
+      git
+      jq
+      lcov
+      memcached
   fedora-build-dependencies:
     default: >-
       cairo-devel
@@ -41,10 +80,32 @@ inputs:
       libmemcached-devel
       librados-devel
       mapnik-devel
+      mapnik-static
       sqlite-devel
   fedora-test-dependencies:
     default: >-
+      git
       httpd
+      jq
+      lcov
+      memcached
+      procps
+  freebsd-build-dependencies:
+    default: >-
+      apache24
+      cairo
+      coreutils
+      curl
+      glib
+      iniparser
+      libmemcached
+      mapnik
+      pkgconf
+  freebsd-test-dependencies:
+    default: >-
+      jq
+      lcov
+      memcached
   macos-build-dependencies:
     default: >-
       apr
@@ -52,43 +113,53 @@ inputs:
       curl
       glib
       httpd
+      icu4c
       iniparser
       libmemcached
       mapnik
+      pkg-config
   macos-test-dependencies:
     default: >-
       coreutils
-  rhel-build-dependencies:
+      jq
+      lcov
+      memcached
+  opensuse-build-dependencies:
     default: >-
+      apache2-devel
       cairo-devel
+      curl
       glib2-devel
-      httpd-devel
-      iniparser-devel
       libcurl-devel
+      libiniparser-devel
       libmemcached-devel
-      librados2-devel
-  rhel-test-dependencies:
+      librados-devel
+  opensuse-test-dependencies:
     default: >-
-      httpd
-  rhel-mapnik-build-dependencies:
+      apache2
+      apache2-event
+      apache2-prefork
+      jq
+      lcov
+      memcached
+      procps
+  opensuse-mapnik-build-dependencies:
     default: >-
-      boost-devel
-      bzip2
+      cmake
       freetype-devel
       gdal-devel
+      git
       harfbuzz-devel
+      libboost_regex1_75_0-devel
       libicu-devel
-      libjpeg-turbo-devel
-      libpng-devel
+      libjpeg8-devel
+      libpng16-devel
       libtiff-devel
       libwebp-devel
       libxml2-devel
-      make
       postgresql-devel
       proj-devel
-      python3
-      sqlite-devel
-      tar
+      sqlite3-devel
       zlib-devel
   ubuntu-build-dependencies:
     default: >-
@@ -103,9 +174,10 @@ inputs:
     default: >-
       cmake
       git
-      libboost-filesystem-dev
+      libboost-context-dev
       libboost-program-options-dev
       libboost-regex-dev
+      libboost-url-dev
       libfreetype6-dev
       libgdal-dev
       libharfbuzz-dev
@@ -121,28 +193,30 @@ inputs:
   ubuntu-test-dependencies:
     default: >-
       apache2
+      git
+      jq
+      lcov
+      memcached
   mapnik-build-version-centos-stream:
-    default: 3.1.0
-  mapnik-build-version-amazonlinux2-centos7:
-    default: 3.0.17
+    default: 4.0.3
+  mapnik-build-version-opensuse:
+    default: 4.0.3
 
 runs:
   using: composite
   steps:
-    - name: Install Dependencies (Amazon Linux/CentOS/CentOS Stream)
+    - name: Install Dependencies (CentOS Stream)
       uses: ./.github/actions/dependencies/install/yum
       with:
         dependencies: epel-release
         packages: >-
-          ${{ inputs.rhel-build-dependencies }}
-          ${{ inputs.rhel-mapnik-build-dependencies }}
-          ${{ inputs.rhel-test-dependencies }}
-          ${{ matrix.build_system == 'CMake' && 'cmake3' || 'autoconf automake redhat-rpm-config' }}
+          ${{ inputs.centos-stream-build-dependencies }}
+          ${{ inputs.centos-stream-mapnik-build-dependencies }}
+          ${{ inputs.centos-stream-test-dependencies }}
+          ${{ matrix.build_system == 'CMake' && 'cmake' || 'autoconf automake redhat-rpm-config' }}
           ${{ matrix.compiler == 'LLVM' && 'clang' || 'gcc gcc-c++' }}
-      if: |
-        startsWith(matrix.image, 'amazonlinux:') ||
-        startsWith(matrix.image, 'centos:') ||
-        startsWith(matrix.image, 'quay.io/centos/centos:stream')
+          rpm-build
+      if: startsWith(matrix.image, 'quay.io/centos/centos:stream')
 
     - name: Install Dependencies (Debian)
       uses: ./.github/actions/dependencies/install/apt-get
@@ -163,7 +237,18 @@ runs:
           ${{ inputs.fedora-test-dependencies }}
           ${{ matrix.build_system == 'CMake' && 'cmake' || 'autoconf automake redhat-rpm-config' }}
           ${{ matrix.compiler == 'LLVM' && 'clang' || 'gcc gcc-c++' }}
+          rpm-build
       if: startsWith(matrix.image, 'fedora:')
+
+    - name: Install Dependencies (FreeBSD)
+      uses: ./.github/actions/dependencies/install/pkg
+      with:
+        packages: >-
+          ${{ inputs.freebsd-build-dependencies }}
+          ${{ inputs.freebsd-test-dependencies }}
+          ${{ matrix.build_system == 'CMake' && 'cmake' || 'autoconf automake' }}
+          ${{ matrix.compiler == 'GNU' && 'gcc' || 'llvm' }}
+      if: github.job == 'FreeBSD'
 
     - name: Install Dependencies (macOS)
       uses: ./.github/actions/dependencies/install/brew
@@ -173,7 +258,19 @@ runs:
           ${{ inputs.macos-test-dependencies }}
           ${{ matrix.build_system == 'CMake' && 'cmake' || 'autoconf automake' }}
           ${{ matrix.compiler == 'GNU' && 'gcc' || '' }}
-      if: runner.os == 'macOS'
+      if: github.job == 'macOS'
+
+    - name: Install Dependencies (openSUSE)
+      uses: ./.github/actions/dependencies/install/zypper
+      with:
+        packages: >-
+          ${{ inputs.opensuse-build-dependencies }}
+          ${{ inputs.opensuse-mapnik-build-dependencies }}
+          ${{ inputs.opensuse-test-dependencies }}
+          ${{ matrix.build_system == 'CMake' && 'cmake' || 'automake' }}
+          ${{ matrix.compiler == 'LLVM' && 'clang' || 'gcc12 gcc12-c++' }}
+          rpm-build
+      if: startsWith(matrix.image, 'opensuse/')
 
     - name: Install Dependencies (Ubuntu)
       uses: ./.github/actions/dependencies/install/apt-get
@@ -184,13 +281,22 @@ runs:
           ${{ inputs.ubuntu-test-dependencies }}
           ${{ matrix.build_system == 'CMake' && 'cmake' || '' }}
           ${{ matrix.compiler == 'LLVM' && 'clang' || 'g++ gcc' }}
-      if: startsWith(matrix.image, 'ubuntu:')
+      if: |
+        startsWith(matrix.image, 'ubuntu:') ||
+        (!matrix.image && github.job != 'FreeBSD' && runner.os == 'Linux')
 
-    - name: Build & Install `mapnik` (Amazon Linux 2/CentOS 7)
-      uses: ./.github/actions/dependencies/build-and-install/mapnik
-      with:
-        version: ${{ inputs.mapnik-build-version-amazonlinux2-centos7 }}
-      if: matrix.image == 'amazonlinux:2' || matrix.image == 'centos:7'
+    - name: Link `gcc`/`g++` (openSUSE)
+      run: |
+        update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 40
+        update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 40
+      shell: bash --noprofile --norc -euxo pipefail {0}
+      if: startsWith(matrix.image, 'opensuse/') && matrix.compiler == 'GNU'
+
+    - name: Add `nobody` user/group (openSUSE)
+      run: |
+        useradd --home-dir / --no-create-home --shell /usr/sbin/nologin --system --user-group nobody
+      shell: bash --noprofile --norc -euxo pipefail {0}
+      if: startsWith(matrix.image, 'opensuse/')
 
     - name: Build & Install `mapnik` (CentOS Stream)
       uses: ./.github/actions/dependencies/build-and-install/mapnik
@@ -198,8 +304,22 @@ runs:
         version: ${{ inputs.mapnik-build-version-centos-stream }}
       if: startsWith(matrix.image, 'quay.io/centos/centos:stream')
 
+    - name: Build & Install `mapnik` (openSUSE)
+      uses: ./.github/actions/dependencies/build-and-install/mapnik
+      with:
+        version: ${{ inputs.mapnik-build-version-opensuse }}
+      if: (!matrix.mapnik_latest && startsWith(matrix.image, 'opensuse/'))
+
     - name: Build & Install latest `mapnik` (Debian/Ubuntu)
-      uses: ./.github/actions/dependencies/build-and-install/mapnik/latest
+      uses: ./.github/actions/dependencies/build-and-install/mapnik
+      with:
+        version: latest
       if: |
         matrix.mapnik_latest &&
-        (startsWith(matrix.image, 'debian:') || startsWith(matrix.image, 'ubuntu:'))
+        (startsWith(matrix.image, 'debian:') || startsWith(matrix.image, 'ubuntu:') || runner.os == 'Linux')
+
+    - name: Build & Install latest `mapnik` (openSUSE)
+      uses: ./.github/actions/dependencies/build-and-install/mapnik
+      with:
+        version: latest
+      if: (matrix.mapnik_latest && startsWith(matrix.image, 'opensuse/'))

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2020 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -25,12 +25,12 @@ extern "C" {
 #define HTCP_EXPIRE_CACHE 1
 #define HTCP_EXPIRE_CACHE_PORT "4827"
 
-
-void cache_expire(int sock, char * host, char * uri, int x, int y, int z);
-int init_cache_expire(char * htcphost);
+void cache_expire(int sock, const char *host, const char *uri, int x, int y, int z);
+int init_cache_expire(const char *htcphost);
 
 #ifdef __cplusplus
 }
+
 #endif
 
 #endif

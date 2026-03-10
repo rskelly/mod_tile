@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2020 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -117,27 +117,6 @@ static int check_xyz(int x, int y, int z)
 	return oob;
 }
 
-void xyz_to_path(char *path, size_t len, const char *tile_dir, const char *xmlconfig, int x, int y, int z)
-{
-#ifdef DIRECTORY_HASH
-	// We attempt to cluster the tiles so that a 16x16 square of tiles will be in a single directory
-	// Hash stores our 40 bit result of mixing the 20 bits of the x & y co-ordinates
-	// 4 bits of x & y are used per byte of output
-	unsigned char i, hash[5];
-
-	for (i = 0; i < 5; i++) {
-		hash[i] = ((x & 0x0f) << 4) | (y & 0x0f);
-		x >>= 4;
-		y >>= 4;
-	}
-
-	snprintf(path, len, "%s/%s/%d/%u/%u/%u/%u/%u.png", tile_dir, xmlconfig, z, hash[4], hash[3], hash[2], hash[1], hash[0]);
-#else
-	snprintf(path, len, TILE_PATH "/%s/%d/%d/%d.png", xmlconfig, z, x, y);
-#endif
-	return;
-}
-
 int path_to_xyz(const char *tilepath, const char *path, char *xmlconfig, int *px, int *py, int *pz)
 {
 #ifdef DIRECTORY_HASH
@@ -193,12 +172,6 @@ int path_to_xyz(const char *tilepath, const char *path, char *xmlconfig, int *px
 
 #ifdef METATILE
 // Returns the path to the meta-tile and the offset within the meta-tile
-int xyz_to_meta(char *path, size_t len, const char *tile_dir, const char *xmlconfig, int x, int y, int z)
-{
-	return xyzo_to_meta(path, len, tile_dir, xmlconfig, "", x, y, z);
-}
-
-// Returns the path to the meta-tile and the offset within the meta-tile
 int xyzo_to_meta(char *path, size_t len, const char *tile_dir, const char *xmlconfig, const char *options, int x, int y, int z)
 {
 	unsigned char i, hash[5], offset, mask;
@@ -224,7 +197,7 @@ int xyzo_to_meta(char *path, size_t len, const char *tile_dir, const char *xmlco
 		snprintf(path, len, "%s/%s/%d/%u/%u/%u/%u/%u.meta", tile_dir, xmlconfig, z, hash[4], hash[3], hash[2], hash[1], hash[0]);
 	}
 
-#else
+#else // DIRECTORY_HASH
 
 	if (strlen(options)) {
 		snprintf(path, len, "%s/%s/%d/%u/%u.%s.meta", tile_dir, xmlconfig, z, x, y, options);
@@ -232,7 +205,36 @@ int xyzo_to_meta(char *path, size_t len, const char *tile_dir, const char *xmlco
 		snprintf(path, len, "%s/%s/%d/%u/%u.meta", tile_dir, xmlconfig, z, x, y);
 	}
 
-#endif
+#endif // DIRECTORY_HASH
 	return offset;
 }
-#endif
+
+// Returns the path to the meta-tile and the offset within the meta-tile
+int xyz_to_meta(char *path, size_t len, const char *tile_dir, const char *xmlconfig, int x, int y, int z)
+{
+	return xyzo_to_meta(path, len, tile_dir, xmlconfig, "", x, y, z);
+}
+
+#else // METATILE
+void xyz_to_path(char *path, size_t len, const char *tile_dir, const char *xmlconfig, int x, int y, int z)
+{
+#ifdef DIRECTORY_HASH
+	// We attempt to cluster the tiles so that a 16x16 square of tiles will be in a single directory
+	// Hash stores our 40 bit result of mixing the 20 bits of the x & y co-ordinates
+	// 4 bits of x & y are used per byte of output
+	unsigned char i, hash[5];
+
+	for (i = 0; i < 5; i++) {
+		hash[i] = ((x & 0x0f) << 4) | (y & 0x0f);
+		x >>= 4;
+		y >>= 4;
+	}
+
+	snprintf(path, len, "%s/%s/%d/%u/%u/%u/%u/%u.png", tile_dir, xmlconfig, z, hash[4], hash[3], hash[2], hash[1], hash[0]);
+#else // DIRECTORY_HASH
+	snprintf(path, len, TILE_PATH "/%s/%d/%d/%d.png", xmlconfig, z, x, y);
+#endif // DIRECTORY_HASH
+	return;
+}
+
+#endif // METATILE

@@ -7,7 +7,7 @@
 # 	config   (required)
 # 	autoconf (optional - used by munin-config)
 #
-# Copyright (c) 2007 - 2020 by mod_tile contributors (see AUTHORS file)
+# Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -61,11 +61,11 @@ if [ "$1" = "config" ]; then
   exit 0
 fi
 
-reqTime=$(sed -e '/^TimeRendered/!d' -e 's/.*: //' -e q /run/renderd/renderd.stats)
-reqprioTime=$(sed -e '/^TimePrioRendered/!d' -e 's/.*: //' -e q /run/renderd/renderd.stats)
-reqpriolowTime=$(sed -e '/^TimeLowRendered/!d' -e 's/.*: //' -e q /run/renderd/renderd.stats)
-reqbulkTime=$(sed -e '/^TimeBulkRendered/!d' -e 's/.*: //' -e q /run/renderd/renderd.stats)
-dirtyTime=$(sed -e '/^TimeDirtyRendered/!d' -e 's/.*: //' -e q /run/renderd/renderd.stats)
+reqTime=$(sed -e '/^TimeRendered/!d' -e 's/.*: //' -e q ${RENDERD_STATS:-/run/renderd/renderd.stats})
+reqprioTime=$(sed -e '/^TimePrioRendered/!d' -e 's/.*: //' -e q ${RENDERD_STATS:-/run/renderd/renderd.stats})
+reqpriolowTime=$(sed -e '/^TimeLowRendered/!d' -e 's/.*: //' -e q ${RENDERD_STATS:-/run/renderd/renderd.stats})
+reqbulkTime=$(sed -e '/^TimeBulkRendered/!d' -e 's/.*: //' -e q ${RENDERD_STATS:-/run/renderd/renderd.stats})
+dirtyTime=$(sed -e '/^TimeDirtyRendered/!d' -e 's/.*: //' -e q ${RENDERD_STATS:-/run/renderd/renderd.stats})
 
 echo "req.value " $reqTime
 echo "reqLow.value " $reqpriolowTime

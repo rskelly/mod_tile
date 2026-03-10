@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2020 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -40,7 +40,7 @@
 #include "dir_utils.h"
 #include "store.h"
 
-char *tile_dir = HASH_PATH;
+char *tile_dir = RENDERD_TILE_DIR;
 
 #ifndef METATILE
 #warning("convert_meta not implemented for non-metatile mode. Feel free to submit fix")
@@ -49,6 +49,7 @@ int main(int argc, char **argv)
 	fprintf(stderr, "convert_meta not implemented for non-metatile mode. Feel free to submit fix!\n");
 	return -1;
 }
+
 #else
 
 static int minZoom = 0;
@@ -188,7 +189,7 @@ int main(int argc, char **argv)
 				fprintf(stderr, "Usage: convert_meta [OPTION] ...\n");
 				fprintf(stderr, "Convert the rendered PNGs into the more efficient .meta format\n");
 				fprintf(stderr, "  -m, --map       convert tiles in this map (default is 'default')\n");
-				fprintf(stderr, "  -t, --tile-dir  tile cache directory (default is '" HASH_PATH "')\n");
+				fprintf(stderr, "  -t, --tile-dir  tile cache directory (default is '" RENDERD_TILE_DIR "')\n");
 				fprintf(stderr, "  -u, --unpack    unpack the .meta files back to PNGs\n");
 				fprintf(stderr, "  -z, --min-zoom  only process tiles greater or equal to this zoom level (default is 0)\n");
 				fprintf(stderr, "  -Z, --max-zoom  only process tiles less than or equal to this zoom level (default is %d)\n", MAX_ZOOM);
@@ -226,4 +227,5 @@ int main(int argc, char **argv)
 
 	return 0;
 }
+
 #endif

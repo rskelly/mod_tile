@@ -2,75 +2,82 @@
 name: Build & Test
 
 on:
-  - pull_request
-  - push
+  pull_request:
+  push:
 
 jobs:
   Linux:
+    continue-on-error: ${{ matrix.experimental || false }}
     name: >-
       ${{ matrix.image }}
       (${{ matrix.build_system }})
       (${{ matrix.compiler }})
-      ${{ matrix.mapnik_latest && '(Latest Mapnik)' || '' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        image:
-          - 'centos:7'
-          - 'debian:10'
-          - 'debian:11'
-          - 'debian:testing'
-          - 'fedora:36'
-          - 'fedora:37'
-          - 'fedora:rawhide'
-          - 'ubuntu:20.04'
         build_system:
           - CMake
         compiler:
           - GNU
-        mapnik_latest:
-          - false
+        image:
+          - "debian:12"
+          - "debian:13"
+          - "fedora:42"
+          - "fedora:43"
+          - "opensuse/leap:15"
+          - "ubuntu:22.04"
         on_default_branch:
-          - ${{ contains(github.ref, 'master') || contains(github.ref, 'develop') }}
+          - ${{ contains(github.ref, 'master') || contains(github.ref, 'develop') || contains(github.ref, 'CI') }}
         include:
-          - image: 'ubuntu:22.04'
+          - image: "debian:unstable"
+            build_system: CMake
+            compiler: GNU
+            experimental: true
+          # - image: "quay.io/centos/centos:stream9"
+          #   build_system: CMake
+          #   compiler: GNU
+          #   experimental: true
+          # - image: "quay.io/centos/centos:stream10"
+          #   build_system: CMake
+          #   compiler: GNU
+          #   experimental: true
+          - image: "fedora:rawhide"
+            build_system: CMake
+            compiler: GNU
+            experimental: true
+          - image: "ubuntu:devel"
+            build_system: CMake
+            compiler: GNU
+            experimental: true
+          - image: "ubuntu:24.04"
             build_system: Autotools
             compiler: GNU
-          - image: 'ubuntu:22.04'
+          - image: "ubuntu:24.04"
             build_system: Autotools
             compiler: LLVM
-          - image: 'ubuntu:22.04'
+          - image: "ubuntu:24.04"
             build_system: CMake
             compiler: GNU
-          - image: 'ubuntu:22.04'
+          - image: "ubuntu:24.04"
             build_system: CMake
             compiler: LLVM
-          - image: 'debian:11'
-            build_system: CMake
-            compiler: GNU
-            mapnik_latest: true
-          - image: 'ubuntu:22.04'
-            build_system: CMake
-            compiler: GNU
-            mapnik_latest: true
         exclude:
           - on_default_branch: false
       fail-fast: false
     container:
       env:
-        BUILD_TYPE: Debug
         CC: ${{ matrix.compiler == 'LLVM' && 'clang' || 'gcc' }}
-        CFLAGS: ${{ (matrix.build_system == 'CMake' && matrix.compiler == 'GNU') && '--coverage' || '' }}
+        CFLAGS: --coverage
         CXX: ${{ matrix.compiler == 'LLVM' && 'clang++' || 'g++' }}
-        CXXFLAGS: ${{ (matrix.build_system == 'CMake' && matrix.compiler == 'GNU') && '--coverage' || '' }}
+        CXXFLAGS: --coverage
       image: ${{ matrix.image }}
     steps:
-      - name: Install `git` (Amazon Linux 2)
-        run: yum --assumeyes install git
-        if: matrix.image == 'amazonlinux:2'
+      - name: Install `git` (openSUSE)
+        run: zypper --non-interactive install git
+        if: startsWith(matrix.image, 'opensuse/')
 
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
 
       - name: Install dependencies
         uses: ./.github/actions/dependencies/install
@@ -80,48 +87,121 @@ jobs:
 
       - name: Test `mod_tile`
         uses: ./.github/actions/test
+
+      - name: Process & Report `mod_tile` coverage results
+        uses: ./.github/actions/coverage
+        with:
+          codecov-token: ${{ secrets.CODECOV_TOKEN }}
+          lcov-extra-options: ${{ matrix.image == 'debian:13' && '--ignore-errors inconsistent' || '' }}
+        if: |
+          matrix.compiler != 'LLVM' &&
+          !startsWith(matrix.image, 'opensuse/') &&
+          !matrix.experimental
+
+      - name: Package `mod_tile`
+        uses: ./.github/actions/cmake/package
+        if: matrix.build_system == 'CMake'
+
+      - name: Install `mod_tile`
+        uses: ./.github/actions/install
+
+  Linux-Latest-Mapnik:
+    continue-on-error: true
+    name: >-
+      ${{ matrix.image }}
+      (Latest Mapnik)
+      (${{ matrix.build_system }})
+      (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image:
+          - "debian:unstable"
+          - "ubuntu:devel"
+        build_system:
+          - CMake
+        compiler:
+          - GNU
+        mapnik_latest:
+          - true
+      fail-fast: false
+    container:
+      env:
+        CC: ${{ matrix.compiler == 'LLVM' && 'clang' || 'gcc' }}
+        CFLAGS: --coverage
+        CXX: ${{ matrix.compiler == 'LLVM' && 'clang++' || 'g++' }}
+        CXXFLAGS: --coverage
+      image: ${{ matrix.image }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install dependencies
+        uses: ./.github/actions/dependencies/install
+
+      - name: Build `mod_tile`
+        uses: ./.github/actions/build
+
+      - name: Test `mod_tile`
+        uses: ./.github/actions/test
+
+      - name: Process & Report `mod_tile` coverage results
+        uses: ./.github/actions/coverage
+        with:
+          codecov-token: ${{ secrets.CODECOV_TOKEN }}
+          genhtml-extra-options: --keep-going --ignore-errors inconsistent
+          lcov-extra-options: --keep-going --ignore-errors inconsistent
+
+      - name: Package `mod_tile`
+        uses: ./.github/actions/cmake/package
+        if: matrix.build_system == 'CMake'
 
       - name: Install `mod_tile`
         uses: ./.github/actions/install
 
   macOS:
     env:
-      BUILD_TYPE: Release
-      CFLAGS: -Wno-implicit-function-declaration
+      CFLAGS: --coverage
+      CXXFLAGS: --coverage
+      INSTALL_PREFIX: /usr/local
+      INSTALL_RUNSTATEDIR: /var/run
       LDFLAGS: -undefined dynamic_lookup
-      LIBRARY_PATH: /usr/local/lib
-    name: ${{ matrix.image }} (${{ matrix.build_system }}) (${{ matrix.compiler }})
-    runs-on: ${{ matrix.image }}
+    name: >-
+      ${{ matrix.os }}
+      (${{ matrix.build_system }})
+      (${{ matrix.compiler }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        image:
-          - macos-11
+        os:
+          - macos-14
+          - macos-15
         build_system:
           - CMake
         compiler:
           - LLVM
         on_default_branch:
-          - ${{ contains(github.ref, 'master') || contains(github.ref, 'develop') }}
+          - ${{ contains(github.ref, 'master') || contains(github.ref, 'develop') || contains(github.ref, 'CI') }}
         include:
-          - image: macos-12
-            build_system: Autotools
-            compiler: LLVM
-          - image: macos-12
+          - os: macos-26
             build_system: CMake
             compiler: LLVM
         exclude:
           - on_default_branch: false
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
 
       - name: Install dependencies
         uses: ./.github/actions/dependencies/install
 
-      - name: Set ICU_ROOT
+      - name: Set CPATH, ICU_ROOT, LIBRARY_PATH & TEST_PARALLEL_LEVEL
         run: |
+          echo "CPATH=$(brew --prefix)/include" >> ${GITHUB_ENV}
           echo "ICU_ROOT=$(brew --prefix icu4c)" >> ${GITHUB_ENV}
+          echo "LIBRARY_PATH=$(brew --prefix)/lib" >> ${GITHUB_ENV}
+          echo "TEST_PARALLEL_LEVEL=1" >> ${GITHUB_ENV}
 
       - name: Build `mod_tile`
         uses: ./.github/actions/build
@@ -129,16 +209,92 @@ jobs:
       - name: Test `mod_tile`
         uses: ./.github/actions/test
 
+      - name: Process & Report `mod_tile` coverage results
+        uses: ./.github/actions/coverage
+        with:
+          codecov-token: ${{ secrets.CODECOV_TOKEN }}
+          genhtml-extra-options: --keep-going --ignore-errors category,count,format,inconsistent,range
+          lcov-extra-options: --keep-going --ignore-errors count,format,inconsistent,range
+        if: matrix.os != 'macos-12'
+
+      - name: Package `mod_tile`
+        uses: ./.github/actions/cmake/package
+        if: matrix.build_system == 'CMake'
+
       - name: Install `mod_tile`
         uses: ./.github/actions/install
 
   FreeBSD:
-    if: contains(github.ref, 'master') || contains(github.ref, 'develop')
-    name: FreeBSD (CMake) (LLVM)
-    runs-on: macos-12
+    env:
+      CFLAGS: --coverage
+      CTEST_CLIENT_HOST: ::1
+      CTEST_SERVER_HOST: localhost
+      CXXFLAGS: --coverage
+      INSTALL_PREFIX: /usr/local
+      LIBRARY_PATH: /usr/local/lib
+      TMPDIR: /tmp
+    name: >-
+      ${{ matrix.box_freebsd }}
+      (${{ matrix.build_system }})
+      (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        box_freebsd:
+          - freebsd-13
+        build_system:
+          - CMake
+        compiler:
+          - LLVM
+        on_default_branch:
+          - ${{ contains(github.ref, 'master') || contains(github.ref, 'develop') || contains(github.ref, 'CI') }}
+        include:
+          - box_freebsd: freebsd-14
+            build_system: CMake
+            compiler: LLVM
+        exclude:
+          - on_default_branch: false
+      fail-fast: false
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
 
-      - name: Install dependencies, Build, Test & Install `mod_tile`
-        uses: ./.github/actions/freebsd
+      - name: Set `BUILD_PARALLEL_LEVEL` & `TEST_PARALLEL_LEVEL`
+        run: |
+          echo "BUILD_PARALLEL_LEVEL=$(nproc)" >> ${GITHUB_ENV}
+          echo "TEST_PARALLEL_LEVEL=$(nproc)" >> ${GITHUB_ENV}
+
+      - name: Provision VM
+        uses: hummeltech/freebsd-vagrant-action@v4
+        with:
+          box: bento/${{ matrix.box_freebsd }}
+          cpus: ${{ env.BUILD_PARALLEL_LEVEL }}
+          memory: 4096
+          ssh_shell: sh
+
+      # Mapnik is not in the `quarterly` repository (2023.10.12)
+      - name: Use "latest" repository
+        run: |
+          sudo mkdir -p /usr/local/etc/pkg/repos
+          sed 's#/quarterly#/latest#g' /etc/pkg/FreeBSD.conf | sudo tee /usr/local/etc/pkg/repos/FreeBSD.conf
+          sudo pkg upgrade --yes
+
+      - name: Install dependencies
+        uses: ./.github/actions/dependencies/install
+
+      - name: Build `mod_tile`
+        uses: ./.github/actions/build
+
+      - name: Test `mod_tile`
+        uses: ./.github/actions/test
+
+      - name: Process & Report `mod_tile` coverage results
+        uses: ./.github/actions/coverage
+        with:
+          codecov-token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Package `mod_tile`
+        uses: ./.github/actions/cmake/package
+
+      - name: Install `mod_tile`
+        uses: ./.github/actions/install

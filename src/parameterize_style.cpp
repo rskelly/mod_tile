@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2020 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -15,24 +15,25 @@
  * along with this program; If not, see http://www.gnu.org/licenses/.
  */
 
-#include <mapnik/version.hpp>
-#include <mapnik/map.hpp>
-#include <mapnik/layer.hpp>
-#include <mapnik/params.hpp>
 #include <mapnik/datasource.hpp>
 #include <mapnik/datasource_cache.hpp>
+#include <mapnik/layer.hpp>
+#include <mapnik/map.hpp>
+#include <mapnik/params.hpp>
+#include <mapnik/version.hpp>
 
+#if MAPNIK_MAJOR_VERSION < 4
 #include <boost/optional.hpp>
+#endif
 
-#include "parameterize_style.hpp"
 #include "g_logger.h"
+#include "parameterize_style.hpp"
 
-
-static void parameterize_map_language(mapnik::Map &m, char * parameter)
+static void parameterize_map_language(mapnik::Map &m, char *parameter)
 {
 	unsigned int i;
-	char * data = strdup(parameter);
-	char * tok;
+	char *data = strdup(parameter);
+	char *tok;
 	char name_replace[256];
 
 	name_replace[0] = 0;
@@ -41,7 +42,7 @@ static void parameterize_map_language(mapnik::Map &m, char * parameter)
 
 	if (!tok) {
 		free(data);
-		return;        //No parameterization given
+		return; // No parameterization given
 	}
 
 	strncat(name_replace, ", coalesce(", 255);
@@ -56,7 +57,6 @@ static void parameterize_map_language(mapnik::Map &m, char * parameter)
 		}
 
 		tok = strtok(NULL, ",");
-
 	}
 
 	free(data);
@@ -64,43 +64,33 @@ static void parameterize_map_language(mapnik::Map &m, char * parameter)
 	strncat(name_replace, ") as name", 255);
 
 	for (i = 0; i < m.layer_count(); i++) {
-#if MAPNIK_VERSION >= 300000
-		mapnik::layer& l = m.get_layer(i);
-#else
-		mapnik::layer& l = m.getLayer(i);
-#endif
+		mapnik::layer &l = m.get_layer(i);
 		mapnik::parameters params = l.datasource()->params();
 
 		if (params.find("table") != params.end()) {
-			boost::optional<std::string> table = params.get<std::string>("table");
+			auto table = params.get<std::string>("table");
 
 			if (table && table->find(",name") != std::string::npos) {
 				std::string str = *table;
 				size_t pos = str.find(",name");
 				str.replace(pos, 5, name_replace);
 				params["table"] = str;
-#if MAPNIK_VERSION >= 200200
 				l.set_datasource(mapnik::datasource_cache::instance().create(params));
-#else
-				l.set_datasource(mapnik::datasource_cache::instance()->create(params));
-#endif
 			}
 		}
-
 	}
 }
 
-
-parameterize_function_ptr init_parameterization_function(char * function_name)
+parameterize_function_ptr init_parameterization_function(const char *function_name)
 {
 	if (strcmp(function_name, "") == 0) {
 		g_logger(G_LOG_LEVEL_DEBUG, "Parameterize_style not specified (or empty string specified)");
 		return NULL;
 	} else if (strcmp(function_name, "language") == 0) {
-		g_logger(G_LOG_LEVEL_INFO, "Loading parameterization function for %s", function_name);
+		g_logger(G_LOG_LEVEL_DEBUG, "Loading parameterization function for '%s'", function_name);
 		return parameterize_map_language;
 	} else {
-		g_logger(G_LOG_LEVEL_WARNING, "unknown parameterization function for %s", function_name);
+		g_logger(G_LOG_LEVEL_WARNING, "unknown parameterization function for '%s'", function_name);
 	}
 
 	return NULL;

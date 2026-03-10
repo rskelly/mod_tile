@@ -6,8 +6,20 @@
 
 include_directories(${PROJECT_SOURCE_DIR}/includes)
 
-include_directories(SYSTEM ${APR_INCLUDE_DIRS} ${Cairo_INCLUDE_DIRS} ${CURL_INCLUDE_DIRS} ${GLib_INCLUDE_DIRS} ${HTTPD_INCLUDE_DIRS})
-include_directories(SYSTEM ${ICU_INCLUDE_DIRS} ${IniParser_INCLUDE_DIRS} ${LibMapnik_INCLUDE_DIRS} ${LibMemcached_INCLUDE_DIRS} ${LibRados_INCLUDE_DIRS})
+include_directories(SYSTEM
+  ${APR_INCLUDE_DIRS}
+  ${CAIRO_INCLUDE_DIRS}
+  ${CURL_INCLUDE_DIRS}
+  ${GLIB_INCLUDE_DIRS}
+  ${HTTPD_INCLUDE_DIRS}
+)
+include_directories(SYSTEM
+  ${ICU_INCLUDE_DIRS}
+  ${INIPARSER_INCLUDE_DIRS}
+  ${LIBMAPNIK_INCLUDE_DIRS}
+  ${LIBMEMCACHED_INCLUDE_DIRS}
+  ${LIBRADOS_INCLUDE_DIRS}
+)
 
 link_directories(${CMAKE_LIBRARY_PATH})
 
@@ -16,26 +28,42 @@ set(COMMON_SRCS
   sys_utils.c
 )
 set(COMMON_LIBRARIES
-  ${GLib_LIBRARIES}
+  ${GLIB_LIBRARIES}
   Threads::Threads
 )
 
+set(RENDER_SRCS
+  ${COMMON_SRCS}
+  protocol_helper.c
+  renderd_config.c
+)
+set(RENDER_LIBRARIES
+  ${COMMON_LIBRARIES}
+  ${INIPARSER_LIBRARIES}
+  ${MATH_LIBRARY}
+)
+
 set(STORE_SRCS
-  store_file_utils.c
+  store.c
   store_file.c
+  store_file_utils.c
   store_memcached.c
   store_null.c
   store_rados.c
   store_ro_composite.c
   store_ro_http_proxy.c
-  store.c
 )
 set(STORE_LIBRARIES
-  ${Cairo_LIBRARIES}
+  ${CAIRO_LIBRARIES}
   ${CURL_LIBRARIES}
-  ${LibMemcached_LIBRARIES}
-  ${LibRados_LIBRARIES}
+  ${LIBMEMCACHED_LIBRARIES}
+  ${LIBRADOS_LIBRARIES}
 )
+
+if(NOT MALLOC_LIB STREQUAL "libc")
+  message(STATUS "Prepending '${MALLOC_LIBRARY}' to RENDER_LIBRARIES")
+  list(PREPEND RENDER_LIBRARIES ${MALLOC_LIBRARY})
+endif()
 
 #-----------------------------------------------------------------------------
 #
@@ -53,10 +81,12 @@ set(mod_tile_SRCS
   ${COMMON_SRCS}
   ${STORE_SRCS}
   mod_tile.c
+  renderd_config.c
 )
 set(mod_tile_LIBS
   ${APR_LIBRARIES}
   ${COMMON_LIBRARIES}
+  ${INIPARSER_LIBRARIES}
   ${STORE_LIBRARIES}
 )
 add_library(mod_tile SHARED ${mod_tile_SRCS})
@@ -70,14 +100,13 @@ set_target_properties(mod_tile PROPERTIES PREFIX "" SUFFIX ".so")
 #-----------------------------------------------------------------------------
 
 set(render_expired_SRCS
-  ${COMMON_SRCS}
+  ${RENDER_SRCS}
   ${STORE_SRCS}
-  protocol_helper.c
   render_expired.c
   render_submit_queue.c
 )
 set(render_expired_LIBS
-  ${COMMON_LIBRARIES}
+  ${RENDER_LIBRARIES}
   ${STORE_LIBRARIES}
 )
 add_executable(render_expired ${render_expired_SRCS})
@@ -90,14 +119,13 @@ target_link_libraries(render_expired ${render_expired_LIBS})
 #-----------------------------------------------------------------------------
 
 set(render_list_SRCS
-  ${COMMON_SRCS}
+  ${RENDER_SRCS}
   ${STORE_SRCS}
-  protocol_helper.c
   render_list.c
   render_submit_queue.c
 )
 set(render_list_LIBS
-  ${COMMON_LIBRARIES}
+  ${RENDER_LIBRARIES}
   ${STORE_LIBRARIES}
 )
 add_executable(render_list ${render_list_SRCS})
@@ -110,14 +138,13 @@ target_link_libraries(render_list ${render_list_LIBS})
 #-----------------------------------------------------------------------------
 
 set(render_old_SRCS
-  ${COMMON_SRCS}
-  protocol_helper.c
+  ${RENDER_SRCS}
   render_old.c
   render_submit_queue.c
   store_file_utils.c
 )
 set(render_old_LIBS
-  ${COMMON_LIBRARIES}
+  ${RENDER_LIBRARIES}
 )
 add_executable(render_old ${render_old_SRCS})
 target_link_libraries(render_old ${render_old_LIBS})
@@ -129,13 +156,12 @@ target_link_libraries(render_old ${render_old_LIBS})
 #-----------------------------------------------------------------------------
 
 set(render_speedtest_SRCS
-  ${COMMON_SRCS}
-  protocol_helper.c
+  ${RENDER_SRCS}
+  render_speedtest.cpp
   render_submit_queue.c
-  speedtest.cpp
 )
 set(render_speedtest_LIBS
-  ${COMMON_LIBRARIES}
+  ${RENDER_LIBRARIES}
 )
 add_executable(render_speedtest ${render_speedtest_SRCS})
 target_link_libraries(render_speedtest ${render_speedtest_LIBS})
@@ -147,34 +173,32 @@ target_link_libraries(render_speedtest ${render_speedtest_LIBS})
 #-----------------------------------------------------------------------------
 
 set(renderd_SRCS
-  ${COMMON_SRCS}
+  ${RENDER_SRCS}
   ${STORE_SRCS}
   cache_expire.c
   daemon_compat.c
-  daemon.c
   gen_tile.cpp
   metatile.cpp
   parameterize_style.cpp
-  protocol_helper.c
+  renderd.c
   request_queue.c
 )
 set(renderd_LIBS
-  ${COMMON_LIBRARIES}
   ${ICU_LIBRARIES}
-  ${IniParser_LIBRARIES}
-  ${LibMapnik_LIBRARIES}
+  ${LIBMAPNIK_LIBRARIES}
+  ${RENDER_LIBRARIES}
   ${STORE_LIBRARIES}
 )
 add_executable(renderd ${renderd_SRCS})
 target_link_libraries(renderd ${renderd_LIBS})
 
+if(ENABLE_TESTS)
 #-----------------------------------------------------------------------------
 #
 #  Test targets
 #
 #-----------------------------------------------------------------------------
 
-if (ENABLE_TESTS)
 #-----------------------------------------------------------------------------
 #
 #  gen_tile_test
@@ -182,13 +206,36 @@ if (ENABLE_TESTS)
 #-----------------------------------------------------------------------------
 
 set(gen_tile_test_SRCS
+  $<TARGET_OBJECTS:catch_test_common_o>
   ${renderd_SRCS}
-	gen_tile_test.cpp
+  ${PROJECT_SOURCE_DIR}/tests/gen_tile_test.cpp
 )
 set(gen_tile_test_LIBS
   ${renderd_LIBS}
 )
 add_executable(gen_tile_test ${gen_tile_test_SRCS})
+target_compile_definitions(gen_tile_test PRIVATE MAIN_ALREADY_DEFINED)
+target_include_directories(gen_tile_test PRIVATE ${PROJECT_SOURCE_DIR}/tests)
 target_link_libraries(gen_tile_test ${gen_tile_test_LIBS})
-target_compile_options(gen_tile_test PRIVATE -DMAIN_ALREADY_DEFINED)
+set_target_properties(gen_tile_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/tests)
+
+#-----------------------------------------------------------------------------
+#
+#  renderd_config_test_helper
+#
+#-----------------------------------------------------------------------------
+
+set(renderd_config_test_helper_SRCS
+  ${PROJECT_SOURCE_DIR}/tests/renderd_config_test_helper.cpp
+  g_logger.c
+  renderd_config.c
+)
+set(renderd_config_test_helper_LIBS
+  ${GLIB_LIBRARIES}
+  ${INIPARSER_LIBRARIES}
+)
+add_executable(renderd_config_test_helper ${renderd_config_test_helper_SRCS})
+target_link_libraries(renderd_config_test_helper ${renderd_config_test_helper_LIBS})
+set_target_properties(renderd_config_test_helper PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/tests)
+
 endif()

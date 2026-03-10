@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2020 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -15,12 +15,15 @@
  * along with this program; If not, see http://www.gnu.org/licenses/.
  */
 
-#include <string.h>
-#include <unistd.h>
-#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <glib.h>
 #include <netdb.h>
-#include <stdlib.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include "cache_expire.h"
 #include "g_logger.h"
@@ -107,7 +110,7 @@ static void cache_expire_url(int sock, char * url)
 	free(buf);
 }
 
-void cache_expire(int sock, char * host, char * uri, int x, int y, int z)
+void cache_expire(int sock, const char *host, const char *uri, int x, int y, int z)
 {
 
 	if (sock < 0) {
@@ -120,7 +123,7 @@ void cache_expire(int sock, char * host, char * uri, int x, int y, int z)
 	free(url);
 }
 
-int init_cache_expire(char * htcphost)
+int init_cache_expire(const char * htcphost)
 {
 	struct addrinfo hints;
 	struct addrinfo *result, *rp;

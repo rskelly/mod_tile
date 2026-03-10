@@ -27,21 +27,27 @@ if((NOT HTTPD_FOUND) AND (HTTPD_INCLUDE_DIRS))
 endif()
 
 if((NOT HTTPD_VERSION) AND (HTTPD_FOUND))
-	file(STRINGS "${HTTPD_INCLUDE_DIR}/ap_release.h" _contents REGEX "#define AP_SERVER_[A-Z]+_NUMBER[ \t]+")
-	if (_contents)
-		string(REGEX REPLACE ".*#define AP_SERVER_MAJORVERSION_NUMBER[ \t]+([0-9]+).*" "\\1" HTTPD_MAJOR_VERSION "${_contents}")
-		string(REGEX REPLACE ".*#define AP_SERVER_MINORVERSION_NUMBER[ \t]+([0-9]+).*" "\\1" HTTPD_MINOR_VERSION "${_contents}")
-		string(REGEX REPLACE ".*#define AP_SERVER_PATCHLEVEL_NUMBER[ \t]+([0-9]+).*" "\\1" HTTPD_PATCH_VERSION "${_contents}")
+  file(STRINGS "${HTTPD_INCLUDE_DIR}/ap_release.h" _contents REGEX "#define AP_SERVER_[A-Z]+_NUMBER[ \t]+")
+  if(_contents)
+    string(REGEX REPLACE ".*#define AP_SERVER_MAJORVERSION_NUMBER[ \t]+([0-9]+).*" "\\1" HTTPD_MAJOR_VERSION "${_contents}")
+    string(REGEX REPLACE ".*#define AP_SERVER_MINORVERSION_NUMBER[ \t]+([0-9]+).*" "\\1" HTTPD_MINOR_VERSION "${_contents}")
+    string(REGEX REPLACE ".*#define AP_SERVER_PATCHLEVEL_NUMBER[ \t]+([0-9]+).*" "\\1" HTTPD_PATCH_VERSION "${_contents}")
 
-		set(HTTPD_VERSION ${HTTPD_MAJOR_VERSION}.${HTTPD_MINOR_VERSION}.${HTTPD_PATCH_VERSION})
-	endif ()
-endif ()
+    set(HTTPD_VERSION ${HTTPD_MAJOR_VERSION}.${HTTPD_MINOR_VERSION}.${HTTPD_PATCH_VERSION})
+  endif()
+endif()
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(HTTPD
-  FOUND_VAR HTTPD_FOUND
-  REQUIRED_VARS HTTPD_FOUND HTTPD_INCLUDE_DIRS
-  VERSION_VAR HTTPD_VERSION
-)
+
+if(HTTPD_FOUND)
+  find_package_handle_standard_args(HTTPD
+    REQUIRED_VARS HTTPD_FOUND HTTPD_INCLUDE_DIRS
+    VERSION_VAR HTTPD_VERSION
+  )
+else()
+  find_package_handle_standard_args(HTTPD
+    REQUIRED_VARS HTTPD_FOUND
+  )
+endif()
 
 mark_as_advanced(HTTPD_INCLUDE_DIR)

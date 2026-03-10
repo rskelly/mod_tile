@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2020 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -394,6 +394,9 @@ void request_queue_remove_request(struct request_queue * queue, struct item * re
 				queue->stats.timeReqBulkRender += render_time;
 				break;
 			}
+
+			default:
+				break;
 		}
 
 		queue->stats.noZoomRender[request->req.z]++;
@@ -430,6 +433,9 @@ int request_queue_no_requests_queued(struct request_queue * queue, enum protoCmd
 
 		case cmdRenderBulk:
 			noReq = queue->reqBulkNum;
+			break;
+
+		default:
 			break;
 	}
 

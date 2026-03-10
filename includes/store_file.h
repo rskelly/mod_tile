@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2020 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -24,10 +24,10 @@ extern "C" {
 
 #include "store.h"
 
-struct storage_backend * init_storage_file(const char * tile_dir);
-int xyzo_to_meta(char *path, size_t len, const char *tile_dir, const char *xmlconfig, const char *options, int x, int y, int z);
+struct storage_backend *init_storage_file(const char *tile_dir);
 
 #ifdef __cplusplus
 }
+
 #endif
 #endif

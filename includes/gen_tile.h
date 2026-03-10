@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2020 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -24,8 +24,14 @@
 extern "C" {
 #endif
 
-
-enum queueEnum {queueRequest, queueRequestPrio, queueRequestBulk, queueDirty, queueRender,  queueDuplicate, queueRequestLow};
+enum queueEnum { queueRequest,
+		 queueRequestPrio,
+		 queueRequestBulk,
+		 queueDirty,
+		 queueRender,
+		 queueDuplicate,
+		 queueRequestLow
+	       };
 
 struct item {
 	struct item *next;
@@ -38,14 +44,15 @@ struct item {
 	enum queueEnum originatedQueue;
 };
 
-//int render(Map &m, int x, int y, int z, const char *filename);
+// int render(Map &m, int x, int y, int z, const char *filename);
 void *render_thread(void *);
 struct item *fetch_request(void);
 void delete_request(struct item *item);
-void render_init(const char *plugins_dir, const char* font_dir, int font_recurse);
+void render_init(const char *plugins_dir, const char *font_dir, int font_recurse);
 
 #ifdef __cplusplus
 }
+
 #endif
 
 #endif

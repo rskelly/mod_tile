@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2020 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -15,8 +15,8 @@
  * along with this program; If not, see http://www.gnu.org/licenses/.
  */
 
-#ifndef GLOGGER_H
-#define GLOGGER_H
+#ifndef G_LOGGER_H
+#define G_LOGGER_H
 
 #include <glib.h>
 
@@ -24,12 +24,15 @@
 extern "C" {
 #endif
 
+extern int foreground;
+
 void g_logger(int log_level, const char *format, ...);
 
 const char *g_logger_level_name(int log_level);
 
 #ifdef __cplusplus
 }
+
 #endif
 
 #endif

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2020 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -15,19 +15,18 @@
  * along with this program; If not, see http://www.gnu.org/licenses/.
  */
 
-#include "config.h"
-
-#include <string.h>
+#include <glib.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <string.h>
+#include <string>
+#include <sys/types.h>
 
-#include "render_config.h"
-#include "metatile.h"
-#include "store.h"
 #include "cache_expire.h"
-#include "request_queue.h"
 #include "g_logger.h"
-
+#include "metatile.h"
+#include "render_config.h"
+#include "store.h"
 
 metaTile::metaTile(const std::string &xmlconfig, const std::string &options, int x, int y, int z):
 	x_(x), y_(y), z_(z), xmlconfig_(xmlconfig), options_(options)
@@ -80,8 +79,6 @@ void metaTile::save(struct storage_backend * store)
 	m.z = z_;
 
 	offset = header_size;
-	limit = (1 << z_);
-	limit = MIN(limit, METATILE);
 	limit = METATILE;
 
 	// Generate offset table
@@ -122,7 +119,7 @@ void metaTile::save(struct storage_backend * store)
 }
 
 
-void metaTile::expire_tiles(int sock, char * host, char * uri)
+void metaTile::expire_tiles(int sock, const char *host, const char *uri)
 {
 	if (sock < 0) {
 		return;

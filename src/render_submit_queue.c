@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2020 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -23,27 +23,29 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <strings.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
 
-#include "render_submit_queue.h"
-#include "sys_utils.h"
+#include "g_logger.h"
 #include "protocol.h"
 #include "protocol_helper.h"
 #include "render_config.h"
+#include "render_submit_queue.h"
+#include "sys_utils.h"
 
-#define QMAX 32
-
-pthread_mutex_t qLock;
-pthread_mutex_t qStatsLock;
+static pthread_mutex_t qLock;
+static pthread_mutex_t qStatsLock;
 static pthread_cond_t qCondNotEmpty;
 static pthread_cond_t qCondNotFull;
 
 static int maxLoad = 0;
 
+static unsigned int qMaxLen;
 static unsigned int qLen;
 struct qItem {
 	char *mapname;
@@ -55,7 +57,7 @@ struct speed_stat {
 	time_t time_min;
 	time_t time_max;
 	time_t time_total;
-	int    noRendered;
+	int noRendered;
 };
 
 struct speed_stats {
@@ -75,13 +77,14 @@ static void check_load(void)
 	double avg = get_load_avg();
 
 	while (avg >= maxLoad) {
-		/* printf("Load average %d, sleeping\n", avg); */
-		sleep(5);
+		int seconds = 5;
+		g_logger(G_LOG_LEVEL_DEBUG, "Load average %d, sleeping %is", avg, seconds);
+		sleep(seconds);
 		avg = get_load_avg();
 	}
 }
 
-static int process(struct protocol * cmd, int fd)
+static int process(struct protocol *cmd, int fd)
 {
 	struct timeval tim;
 	time_t t1;
@@ -92,13 +95,15 @@ static int process(struct protocol * cmd, int fd)
 	gettimeofday(&tim, NULL);
 	t1 = tim.tv_sec * 1000 + (tim.tv_usec / 1000);
 
-	//printf("Sending request\n");
+	g_logger(G_LOG_LEVEL_DEBUG, "Sending request");
+
 	if (send_cmd(cmd, fd) < 1) {
-		perror("send error");
+		g_logger(G_LOG_LEVEL_ERROR, "send error: %s", strerror(errno));
 	};
 
-	//printf("Waiting for response\n");
 	bzero(&rsp, sizeof(rsp));
+
+	g_logger(G_LOG_LEVEL_DEBUG, "Waiting for response");
 
 	ret = recv_cmd(&rsp, fd, 1);
 
@@ -106,11 +111,12 @@ static int process(struct protocol * cmd, int fd)
 		return 0;
 	}
 
-	//printf("Got response %i\n", rsp.cmd);
+	g_logger(G_LOG_LEVEL_DEBUG, "Got response %i", rsp.cmd);
 
 	if (rsp.cmd != cmdDone) {
-		printf("rendering failed with command %i, pausing.\n", rsp.cmd);
-		sleep(10);
+		int seconds = 1;
+		g_logger(G_LOG_LEVEL_DEBUG, "Rendering not done with command %i, sleeping %is", rsp.cmd, seconds);
+		sleep(seconds);
 	} else {
 		gettimeofday(&tim, NULL);
 		t2 = tim.tv_sec * 1000 + (tim.tv_usec / 1000);
@@ -131,15 +137,14 @@ static int process(struct protocol * cmd, int fd)
 	}
 
 	if (!ret) {
-		perror("Socket send error");
+		g_logger(G_LOG_LEVEL_ERROR, "Socket send error: %s", strerror(errno));
 	}
 
 	return ret;
 }
 
-static struct protocol * fetch(void)
+static struct protocol *fetch(void)
 {
-	struct protocol * cmd;
 	pthread_mutex_lock(&qLock);
 
 	while (qLen == 0) {
@@ -153,36 +158,34 @@ static struct protocol * fetch(void)
 
 	// Fetch item from queue
 	if (!qHead) {
-		fprintf(stderr, "Queue failure, null qHead with %d items in list\n", qLen);
+		g_logger(G_LOG_LEVEL_CRITICAL, "Queue failure, null qHead with %d items in list", qLen);
 		exit(1);
 	}
 
-	cmd = malloc(sizeof(struct protocol));
-	memset(cmd, 0, sizeof(struct protocol));
+	struct qItem *e = qHead;
 
-	cmd->ver = 2;
-	cmd->cmd = cmdRenderBulk;
-	cmd->z = qHead->z;
-	cmd->x = qHead->x;
-	cmd->y = qHead->y;
-	strncpy(cmd->xmlname, qHead->mapname, XMLCONFIG_MAX - 1);
-
-	if (qHead == qTail) {
-		free(qHead->mapname);
-		free(qHead);
+	if (--qLen == 0) {
 		qHead = NULL;
 		qTail = NULL;
-		qLen = 0;
 	} else {
-		struct qItem *e = qHead;
 		qHead = qHead->next;
-		free(e->mapname);
-		free(e);
-		qLen--;
 	}
 
 	pthread_cond_signal(&qCondNotFull);
 	pthread_mutex_unlock(&qLock);
+
+	struct protocol *cmd = malloc(sizeof(struct protocol));
+
+	cmd->ver = 2;
+	cmd->cmd = cmdRenderBulk;
+	cmd->z = e->z;
+	cmd->x = e->x;
+	cmd->y = e->y;
+	strncpy(cmd->xmlname, e->mapname, XMLCONFIG_MAX - 1);
+
+	free(e->mapname);
+	free(e);
+
 	return cmd;
 }
 
@@ -198,17 +201,17 @@ void enqueue(const char *xmlname, int x, int y, int z)
 	e->next = NULL;
 
 	if (!e->mapname) {
-		fprintf(stderr, "Malloc failure\n");
+		g_logger(G_LOG_LEVEL_CRITICAL, "Malloc failure");
 		exit(1);
 	}
 
 	pthread_mutex_lock(&qLock);
 
-	while (qLen == QMAX) {
+	while (qLen == qMaxLen) {
 		int ret = pthread_cond_wait(&qCondNotFull, &qLock);
 
 		if (ret != 0) {
-			fprintf(stderr, "pthread_cond_wait(qCondNotFull): %s\n", strerror(ret));
+			g_logger(G_LOG_LEVEL_WARNING, "pthread_cond_wait(qCondNotFull): %s", strerror(ret));
 		}
 	}
 
@@ -237,7 +240,7 @@ int make_connection(const char *spath)
 		fd = socket(PF_UNIX, SOCK_STREAM, 0);
 
 		if (fd < 0) {
-			fprintf(stderr, "failed to create unix socket\n");
+			g_logger(G_LOG_LEVEL_CRITICAL, "failed to create unix socket");
 			exit(2);
 		}
 
@@ -245,7 +248,7 @@ int make_connection(const char *spath)
 		addr.sun_family = AF_UNIX;
 		strncpy(addr.sun_path, spath, sizeof(addr.sun_path) - 1);
 
-		if (connect(fd, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+		if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
 			close(fd);
 			return -1;
 		}
@@ -254,13 +257,13 @@ int make_connection(const char *spath)
 		// Create a network socket
 		const char *d = strchr(spath, ':');
 		char *hostname;
-		u_int16_t port = RENDER_PORT;
+		u_int16_t port = RENDERD_PORT;
 		char port_s[6];
 		size_t spath_len = strlen(spath);
 		size_t hostname_len = d ? d - spath : spath_len;
 
 		if (!hostname_len) {
-			hostname = strdup(RENDER_HOST);
+			hostname = strdup(RENDERD_HOST);
 		} else {
 			hostname = malloc(hostname_len + sizeof('\0'));
 			assert(hostname != NULL);
@@ -271,18 +274,18 @@ int make_connection(const char *spath)
 			port = atoi(d + 1);
 
 			if (!port) {
-				port = RENDER_PORT;
+				port = RENDERD_PORT;
 			}
 		}
 
 		snprintf(port_s, sizeof(port_s), "%u", port);
 
-		printf("Connecting to %s, port %u/tcp\n", hostname, port);
+		g_logger(G_LOG_LEVEL_DEBUG, "Connecting to %s, port %u/tcp", hostname, port);
 
 		struct protoent *protocol = getprotobyname("tcp");
 
 		if (!protocol) {
-			fprintf(stderr, "cannot find TCP protocol number\n");
+			g_logger(G_LOG_LEVEL_CRITICAL, "cannot find TCP protocol number");
 			exit(2);
 		}
 
@@ -309,7 +312,7 @@ int make_connection(const char *spath)
 		int ai = getaddrinfo(hostname, port_s, &hints, &result);
 
 		if (ai != 0) {
-			fprintf(stderr, "cannot resolve hostname %s\n", hostname);
+			g_logger(G_LOG_LEVEL_CRITICAL, "cannot resolve hostname %s", hostname);
 			exit(2);
 		}
 
@@ -327,26 +330,24 @@ int make_connection(const char *spath)
 			int name_info = getnameinfo(rp->ai_addr, rp->ai_addrlen, resolved_addr, sizeof(resolved_addr), resolved_port, sizeof(resolved_port), NI_NUMERICHOST | NI_NUMERICSERV);
 
 			if (name_info != 0) {
-				fprintf(stderr, "cannot retrieve name info: %d\n", name_info);
+				g_logger(G_LOG_LEVEL_CRITICAL, "cannot retrieve name info: %d", name_info);
 				exit(2);
 			}
 
-			fprintf(stderr, "Trying %s:%s\n", resolved_addr, resolved_port);
+			g_logger(G_LOG_LEVEL_DEBUG, "Trying %s:%s", resolved_addr, resolved_port);
 
 			if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0) {
-				printf("Connected to %s:%s\n", resolved_addr, resolved_port);
+				g_logger(G_LOG_LEVEL_DEBUG, "Connected to %s:%s", resolved_addr, resolved_port);
 				break;
 			}
-
 		}
 
 		freeaddrinfo(result);
 
 		if (rp == NULL) {
-			fprintf(stderr, "cannot connect to any address for %s\n", hostname);
+			g_logger(G_LOG_LEVEL_CRITICAL, "cannot connect to any address for %s", hostname);
 			exit(2);
 		}
-
 	}
 
 	return fd;
@@ -358,12 +359,12 @@ void *thread_main(void *arg)
 	int fd = make_connection(spath);
 
 	if (fd < 0) {
-		fprintf(stderr, "connect failed for: %s\n", spath);
+		g_logger(G_LOG_LEVEL_ERROR, "connect failed for: %s", spath);
 		return NULL;
 	}
 
 	while (1) {
-		struct protocol * cmd;
+		struct protocol *cmd;
 		check_load();
 
 		if (!(cmd = fetch())) {
@@ -371,14 +372,15 @@ void *thread_main(void *arg)
 		}
 
 		while (process(cmd, fd) < 1) {
-			fprintf(stderr, "connection to renderd lost\n");
+			g_logger(G_LOG_LEVEL_ERROR, "connection to renderd lost");
 			close(fd);
 			fd = -1;
 
 			while (fd < 0) {
-				fprintf(stderr, "sleeping for 30 seconds\n");
+				int seconds = 30;
+				g_logger(G_LOG_LEVEL_WARNING, "sleeping for %i seconds", seconds);
 				sleep(30);
-				fprintf(stderr, "attempting to reconnect\n");
+				g_logger(G_LOG_LEVEL_WARNING, "attempting to reconnect");
 				fd = make_connection(spath);
 			}
 		}
@@ -403,17 +405,19 @@ void spawn_workers(int num, const char *spath, int max_load)
 	pthread_cond_init(&qCondNotEmpty, NULL);
 	pthread_cond_init(&qCondNotFull, NULL);
 
-	printf("Starting %d rendering threads\n", no_workers);
+	qMaxLen = no_workers;
+
+	g_logger(G_LOG_LEVEL_MESSAGE, "Starting %d rendering threads", no_workers);
 	workers = calloc(sizeof(pthread_t), no_workers);
 
 	if (!workers) {
-		perror("Error allocating worker memory");
+		g_logger(G_LOG_LEVEL_CRITICAL, "Error allocating worker memory: %s", strerror(errno));
 		exit(1);
 	}
 
 	for (i = 0; i < no_workers; i++) {
 		if (pthread_create(&workers[i], NULL, thread_main, (void *)spath)) {
-			perror("Thread creation failed");
+			g_logger(G_LOG_LEVEL_CRITICAL, "Thread creation failed: %s", strerror(errno));
 			exit(1);
 		}
 	}
@@ -430,7 +434,7 @@ void print_statistics(void)
 		}
 
 		printf("Zoom %02i: min: %4.1f    avg: %4.1f     max: %4.1f     over a total of %8.1fs in %i requests\n",
-		       i, performance_stats.stat[i].time_min / 1000.0, (performance_stats.stat[i].time_total /  performance_stats.stat[i].noRendered) / 1000.0,
+		       i, performance_stats.stat[i].time_min / 1000.0, (performance_stats.stat[i].time_total / (float)performance_stats.stat[i].noRendered) / 1000.0,
 		       performance_stats.stat[i].time_max / 1000.0, performance_stats.stat[i].time_total / 1000.0, performance_stats.stat[i].noRendered);
 	}
 
@@ -452,15 +456,13 @@ void wait_for_empty_queue()
 
 void finish_workers(void)
 {
-	int i;
-
-	printf("Waiting for rendering threads to finish\n");
+	g_logger(G_LOG_LEVEL_MESSAGE, "Waiting for rendering threads to finish");
 	pthread_mutex_lock(&qLock);
 	work_complete = 1;
 	pthread_mutex_unlock(&qLock);
 	pthread_cond_broadcast(&qCondNotEmpty);
 
-	for (i = 0; i < no_workers; i++) {
+	for (int i = 0; i < no_workers; i++) {
 		pthread_join(workers[i], NULL);
 	}
 
