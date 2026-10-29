@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2026 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -127,7 +127,7 @@ static void descend(const char *search)
 int main(int argc, char **argv)
 {
 	int z, c;
-	const char *map = "default";
+	const char *map = XMLCONFIG_DEFAULT;
 
 	while (1) {
 		int option_index = 0;
@@ -218,7 +218,7 @@ int main(int argc, char **argv)
 
 	gettimeofday(&end, NULL);
 	printf("\nTotal for all tiles converted\n");
-	printf("Meta tiles converted: ");
+	printf("Metatiles converted: ");
 	display_rate(start, end, num_render);
 	printf("Total tiles converted: ");
 	display_rate(start, end, num_render * METATILE * METATILE);

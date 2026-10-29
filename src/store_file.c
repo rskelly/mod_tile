@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2026 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -15,10 +15,10 @@
  * along with this program; If not, see http://www.gnu.org/licenses/.
  */
 
-/* Meta-tile optimised file storage
+/* Metatile optimised file storage
  *
  * Instead of storing each individual tile as a file,
- * bundle the 8x8 meta tile into a special meta-file.
+ * bundle the 8x8 metatile into a special meta-file.
  * This reduces the Inode usage and more efficient
  * utilisation of disk space.
  */
@@ -68,13 +68,18 @@ static int file_tile_read(struct storage_backend * store, const char *xmlconfig,
 {
 
 	char path[PATH_MAX];
-	int meta_offset, fd;
+	int meta_offset, fd = FD_INVALID;
 	unsigned int pos;
 	unsigned int header_len = sizeof(struct meta_layout) + METATILE * METATILE * sizeof(struct entry);
 	struct meta_layout *m = (struct meta_layout *)malloc(header_len);
 	size_t file_offset, tile_size;
 
-	meta_offset = xyzo_to_meta(path, sizeof(path), store->storage_ctx, xmlconfig, options, x, y, z);
+	if (m == NULL) {
+		snprintf(log_msg, PATH_MAX - 1, "Failed to allocate memory for metatile header\n");
+		return -1;
+	}
+
+	meta_offset = xyzo_to_meta(path, sizeof(path), (char *)(store->storage_ctx), xmlconfig, options, x, y, z);
 
 	fd = open(path, O_RDONLY);
 
@@ -189,7 +194,7 @@ static struct stat_info file_tile_stat(struct storage_backend * store, const cha
 		tile_stat.ctime = st_stat.st_ctime;
 	}
 
-	if (tile_stat.mtime < getPlanetTime(store->storage_ctx, xmlconfig)) {
+	if (tile_stat.mtime < getPlanetTime((char *)(store->storage_ctx), xmlconfig)) {
 		tile_stat.expired = 1;
 	} else {
 		tile_stat.expired = 0;
@@ -210,7 +215,7 @@ static char * file_tile_storage_id(struct storage_backend * store, const char *x
 
 static int file_metatile_write(struct storage_backend * store, const char *xmlconfig, const char *options, int x, int y, int z, const char *buf, int sz)
 {
-	int fd;
+	int fd = FD_INVALID;
 	char meta_path[PATH_MAX];
 	char * tmp;
 	int res;
@@ -218,10 +223,17 @@ static int file_metatile_write(struct storage_backend * store, const char *xmlco
 	xyzo_to_meta(meta_path, sizeof(meta_path), (char *)(store->storage_ctx), xmlconfig, options, x, y, z);
 	g_logger(G_LOG_LEVEL_DEBUG, "Creating and writing a metatile to %s", meta_path);
 
-	tmp = malloc(sizeof(char) * strlen(meta_path) + 24);
+	tmp = (char *)malloc(sizeof(char) * strlen(meta_path) + 24);
+
+	if (tmp == NULL) {
+		g_logger(G_LOG_LEVEL_ERROR, "file_metatile_write: failed to allocate memory for temp path");
+		return -1;
+	}
+
 	snprintf(tmp, strlen(meta_path) + 24, "%s.%lu", meta_path, (unsigned long) pthread_self());
 
 	if (mkdirp(tmp)) {
+		g_logger(G_LOG_LEVEL_WARNING, "Error creating directory %s: %s", tmp, strerror(errno));
 		free(tmp);
 		return -1;
 	}
@@ -245,7 +257,14 @@ static int file_metatile_write(struct storage_backend * store, const char *xmlco
 	}
 
 	close(fd);
-	rename(tmp, meta_path);
+
+	if (rename(tmp, meta_path) != 0) {
+		g_logger(G_LOG_LEVEL_WARNING, "Error renaming temp file %s to %s: %s", tmp, meta_path, strerror(errno));
+		unlink(tmp);
+		free(tmp);
+		return -1;
+	}
+
 	free(tmp);
 
 	return sz;
@@ -270,7 +289,7 @@ static int file_metatile_expire(struct storage_backend * store, const char *xmlc
 	struct utimbuf touchTime;
 
 	//TODO: deal with options
-	xyz_to_meta(name, sizeof(name), store->storage_ctx, xmlconfig, x, y, z);
+	xyz_to_meta(name, sizeof(name), (char *)(store->storage_ctx), xmlconfig, x, y, z);
 
 	if (stat(name, &s) == 0) {// 0 is success
 		// tile exists on disk; mark it as expired
@@ -278,7 +297,7 @@ static int file_metatile_expire(struct storage_backend * store, const char *xmlc
 		if (!gmtime_r(&(s.st_mtime), &touchCalendar)) {
 			touchTime.modtime = 315558000;
 		} else {
-			if (touchCalendar.tm_year > 105) { // Tile hasn't already been marked as expired
+			if (touchCalendar.tm_year > 115) { // Tile hasn't already been marked as expired
 				touchCalendar.tm_year -= 20; //Set back by 20 years, to keep the creation time as reference.
 				touchTime.modtime = mktime(&touchCalendar);
 			} else {
@@ -306,7 +325,7 @@ static int file_close_storage(struct storage_backend * store)
 struct storage_backend * init_storage_file(const char * tile_dir)
 {
 
-	struct storage_backend * store = malloc(sizeof(struct storage_backend));
+	struct storage_backend * store = (struct storage_backend *)malloc(sizeof(struct storage_backend));
 
 	if (store == NULL) {
 		g_logger(G_LOG_LEVEL_ERROR, "init_storage_file: Failed to allocate memory for storage backend");

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2026 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -15,10 +15,10 @@
  * along with this program; If not, see http://www.gnu.org/licenses/.
  */
 
-/* Meta-tile optimised file storage
+/* Metatile optimised file storage
  *
  * Instead of storing each individual tile as a file,
- * bundle the 8x8 meta tile into a special meta-file.
+ * bundle the 8x8 metatile into a special meta-file.
  * This reduces the Inode usage and more efficient
  * utilisation of disk space.
  */
@@ -134,6 +134,11 @@ static int rados_tile_read(struct storage_backend * store, const char *xmlconfig
 	int err;
 	char * buf_raw;
 
+	if (m == NULL) {
+		snprintf(log_msg, 1024, "Failed to allocate memory for metatile header\n");
+		return -1;
+	}
+
 	mask = METATILE - 1;
 	meta_offset = (x & mask) * METATILE + (y & mask);
 
@@ -234,6 +239,11 @@ static int rados_metatile_write(struct storage_backend * store, const char *xmlc
 	char * buf2 = malloc(sz2);
 	int err;
 
+	if (buf2 == NULL) {
+		g_logger(G_LOG_LEVEL_ERROR, "rados_metatile_write: failed to allocate memory for write buffer");
+		return -1;
+	}
+
 	tile_stat.expired = 0;
 	tile_stat.size = sz;
 	tile_stat.mtime = time(NULL);
@@ -329,6 +339,7 @@ static int rados_close_storage(struct storage_backend * store)
 	free(ctx->metadata_cache.data);
 	free(ctx->pool);
 	free(ctx);
+	store->storage_ctx = NULL;
 	return 0;
 }
 
@@ -351,7 +362,7 @@ struct storage_backend * init_storage_rados(const char * connection_string)
 	int err;
 	int i;
 
-	if (ctx == NULL) {
+	if (ctx == NULL || store == NULL) {
 		free(ctx);
 		free(store);
 		return NULL;

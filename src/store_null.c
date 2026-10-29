@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2026 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -90,7 +90,7 @@ static int close_storage(struct storage_backend * store)
 
 struct storage_backend *init_storage_null()
 {
-	struct storage_backend *store = malloc(sizeof * store);
+	struct storage_backend *store = (struct storage_backend *)malloc(sizeof * store);
 
 	if (store == NULL) {
 		g_logger(G_LOG_LEVEL_ERROR, "init_storage_null: Failed to allocate memory for storage backend");

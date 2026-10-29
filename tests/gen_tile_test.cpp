@@ -28,7 +28,6 @@
 #include <string.h>
 #include <string>
 #include <strings.h>
-#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <syslog.h>
 #include <time.h>
@@ -70,7 +69,7 @@ struct item *init_render_request(enum protoCmd type)
 	struct item *item = (struct item *)malloc(sizeof(struct item));
 	bzero(item, sizeof(struct item));
 	item->req.ver = PROTO_VER;
-	strcpy(item->req.xmlname, "default");
+	strcpy(item->req.xmlname, XMLCONFIG_DEFAULT);
 	item->req.cmd = type;
 	pthread_mutex_lock(&item_counter_lock);
 	item->mx = counter++;
@@ -113,25 +112,6 @@ void *fetch_thread(void *arg)
 	}
 
 	return NULL;
-}
-
-std::string create_tile_dir(const std::string &dir_name = "mod_tile_test", const char *tmp_dir = getenv("TMPDIR"))
-{
-	if (tmp_dir == NULL) {
-		tmp_dir = P_tmpdir;
-	}
-
-	std::string tile_dir(tmp_dir);
-	tile_dir.append("/").append(dir_name);
-
-	mkdir(tile_dir.c_str(), 0777);
-
-	return tile_dir;
-}
-
-int delete_tile_dir(const std::string &tile_dir)
-{
-	return rmdir(tile_dir.c_str());
 }
 
 TEST_CASE("renderd/queueing", "request queueing")
@@ -583,9 +563,9 @@ TEST_CASE("renderd", "tile generation")
 
 	SECTION("rx_request/bad", "should return cmdNotDone") {
 		int pipefd[2];
-		pipe(pipefd);
+		REQUIRE(pipe(pipefd) == 0);
 		struct protocol *req = (struct protocol *)malloc(sizeof(struct protocol));
-		std::string expected_mimetype = "image/png", expected_options = "", expected_xmlname = "default";
+		std::string expected_mimetype = "image/png", expected_options = "", expected_xmlname = XMLCONFIG_DEFAULT;
 
 		req->x = 1024;
 		req->y = 1024;
@@ -716,7 +696,7 @@ TEST_CASE("storage-backend", "Tile storage backend router")
 TEST_CASE("file storage-backend", "File Tile storage backend")
 {
 	std::string tile_dir = create_tile_dir();
-	std::string xmlconfig("default");
+	std::string xmlconfig(XMLCONFIG_DEFAULT);
 
 	SECTION("storage/initialise", "should return tile_dir storage_ctx") {
 		struct storage_backend *store = NULL;
@@ -1003,7 +983,6 @@ TEST_CASE("memcached storage-backend", "MemcacheD Tile storage backend")
 {
 	int found;
 	std::string err_log_lines, out_log_lines;
-	struct storage_backend *store = NULL;
 
 #ifdef HAVE_LIBMEMCACHED
 	SECTION("memcached storage/initialise", "should not return NULL") {
@@ -1030,7 +1009,7 @@ TEST_CASE("memcached storage-backend", "MemcacheD Tile storage backend")
 
 TEST_CASE("null storage-backend", "NULL Tile storage backend")
 {
-	std::string xmlconfig("default");
+	std::string xmlconfig(XMLCONFIG_DEFAULT);
 
 	SECTION("storage/initialise", "should return NULL storage_ctx") {
 		struct storage_backend *store = NULL;
@@ -1193,7 +1172,6 @@ TEST_CASE("rados storage-backend", "RADOS Tile storage backend")
 	SECTION("storage/initialise", "should return NULL") {
 		int found;
 		std::string err_log_lines, out_log_lines;
-		struct storage_backend *store = NULL;
 
 		start_capture();
 		REQUIRE(init_storage_backend("rados://") == NULL);
@@ -1212,27 +1190,37 @@ TEST_CASE("ro_composite storage-backend", "RO Composite Tile storage backend")
 {
 	int found;
 	std::string err_log_lines, out_log_lines;
-	struct storage_backend *store = NULL;
+	std::string tile_dir = P_tmpdir;
+	std::string valid = "composite:{default," + tile_dir + "}{default," + tile_dir + "}";
 
-#ifndef HAVE_CAIRO
-	SECTION("storage/initialise", "should return NULL") {
-		start_capture();
-		REQUIRE(init_storage_backend("composite:{") == NULL);
-		std::tie(err_log_lines, out_log_lines) = end_capture();
+	start_capture();
+	struct storage_backend *store = init_storage_backend(valid.c_str());
+	std::tie(err_log_lines, out_log_lines) = end_capture();
 
+	if (store == NULL) {
+		// Composite support depends on HAVE_CAIRO as seen by the C sources, which can differ
+		// from what this C++ file sees (e.g. Autotools builds), so check at run time
 		found = err_log_lines.find("init_storage_ro_coposite: Support for compositing storage has not been compiled into this program");
 		REQUIRE(found > -1);
+		return;
 	}
 
-#endif
+	// Closing must free the inner backends and not touch the (never used) tile cache
+	store->close_storage(store);
+	free(store);
+
+	start_capture();
+	// Missing "}{" separator
+	REQUIRE(init_storage_backend(("composite:{default," + tile_dir + "}").c_str()) == NULL);
+	// Primary backend fails to initialise
+	REQUIRE(init_storage_backend(("composite:{default,/does/not/exist}{default," + tile_dir + "}").c_str()) == NULL);
+	// Secondary backend fails to initialise
+	REQUIRE(init_storage_backend(("composite:{default," + tile_dir + "}{default,/does/not/exist}").c_str()) == NULL);
+	end_capture();
 }
 
 TEST_CASE("ro_http_proxy storage-backend", "RO HTTP Proxy Tile storage backend")
 {
-	int found;
-	std::string err_log_lines, out_log_lines;
-	struct storage_backend *store = NULL;
-
 #ifdef HAVE_LIBCURL
 	SECTION("storage/initialise", "should return 1") {
 		struct storage_backend *store = NULL;
@@ -1245,6 +1233,9 @@ TEST_CASE("ro_http_proxy storage-backend", "RO HTTP Proxy Tile storage backend")
 
 #else
 	SECTION("storage/initialise", "should return NULL") {
+		int found;
+		std::string err_log_lines, out_log_lines;
+
 		start_capture();
 		REQUIRE(init_storage_backend("ro_http_proxy://") == NULL);
 		std::tie(err_log_lines, out_log_lines) = end_capture();
@@ -1366,7 +1357,7 @@ TEST_CASE("g_logger", "Test g_logger.c")
 		std::string message = expected_output + " FOREGROUND TEST";
 		start_capture();
 		foreground = 1;
-		g_logger(log_level, message.c_str());
+		g_logger(log_level, "%s", message.c_str());
 		std::tie(err_log_lines, out_log_lines) = end_capture();
 		foreground = 0;
 
@@ -1400,7 +1391,7 @@ TEST_CASE("g_logger", "Test g_logger.c")
 	SECTION("g_logger foreground debug: " + expected_output, "should log the expected string") {
 		std::string message = expected_output + " FOREGROUND DEBUG TEST";
 		start_capture(1);
-		g_logger(log_level, message.c_str());
+		g_logger(log_level, "%s", message.c_str());
 		std::tie(err_log_lines, out_log_lines) = end_capture();
 
 		found_err = err_log_lines.find(message);
@@ -1444,67 +1435,6 @@ TEST_CASE("metatile", "Test metatile.cpp")
 			}
 		}
 	}
-}
-
-TEST_CASE("protocol_helper", "Test protocol_helper.c")
-{
-	int block = 0, fd, found, ret;
-	std::string err_log_lines, out_log_lines;
-	struct protocol *cmd = (struct protocol *)malloc(sizeof(struct protocol));
-
-	cmd->x = 1024;
-	cmd->y = 1024;
-	cmd->z = 10;
-
-	SECTION("send_cmd/ver invalid version", "should return -1") {
-		// Version must be 1, 2 or 3
-		cmd->ver = 0;
-
-		start_capture();
-		ret = send_cmd(cmd, fd);
-		std::tie(err_log_lines, out_log_lines) = end_capture();
-
-		REQUIRE(ret == -1);
-		found = err_log_lines.find("Failed to send render cmd with unknown protocol version 0");
-		REQUIRE(found > -1);
-
-		// Version must be 1, 2 or 3
-		cmd->ver = 4;
-
-		start_capture();
-		ret = send_cmd(cmd, fd);
-		std::tie(err_log_lines, out_log_lines) = end_capture();
-
-		REQUIRE(ret == -1);
-		found = err_log_lines.find("Failed to send render cmd with unknown protocol version 4");
-		REQUIRE(found > -1);
-	}
-
-	SECTION("send_cmd/fd invalid", "should return -1") {
-		cmd->ver = 1;
-
-		start_capture();
-		ret = send_cmd(cmd, fd);
-		std::tie(err_log_lines, out_log_lines) = end_capture();
-
-		REQUIRE(ret == -1);
-		found = err_log_lines.find("Failed to send render cmd on fd");
-		REQUIRE(found > -1);
-	}
-
-	SECTION("recv_cmd/fd invalid debug", "should return -1") {
-		cmd->ver = 1;
-
-		start_capture(1);
-		ret = recv_cmd(cmd, fd, block);
-		std::tie(err_log_lines, out_log_lines) = end_capture();
-
-		REQUIRE(ret == -1);
-		found = out_log_lines.find("Failed to read cmd on fd");
-		REQUIRE(found > -1);
-	}
-
-	free(cmd);
 }
 
 int main(int argc, char *argv[])

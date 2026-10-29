@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2026 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -27,14 +27,32 @@
 
 #include "cache_expire.h"
 #include "g_logger.h"
+
+/*
+ * Write 16/32 bit values in network byte order at an arbitrary (possibly
+ * unaligned) offset. Casting &buf[idx] to uint16_t* / uint32_t* is undefined
+ * behaviour and faults on strict-alignment CPUs.
+ */
+static void put_u16(char *dst, uint16_t value)
+{
+	uint16_t net = htons(value);
+	memcpy(dst, &net, sizeof(net));
+}
+
+static void put_u32(char *dst, uint32_t value)
+{
+	uint32_t net = htonl(value);
+	memcpy(dst, &net, sizeof(net));
+}
+
 /**
  * This function sends a HTCP cache clr request for a given
  * URL.
  * RFC for HTCP can be found at http://www.htcp.org/
  */
-static void cache_expire_url(int sock, char * url)
+static void cache_expire_url(int sock, char *url)
 {
-	char * buf;
+	char *buf;
 
 	if (sock < 0) {
 		return;
@@ -44,7 +62,7 @@ static void cache_expire_url(int sock, char * url)
 	int url_len;
 
 	url_len = strlen(url);
-	buf = (char *) malloc(12 + 22 + url_len);
+	buf = (char *)malloc(12 + 22 + url_len);
 
 	if (!buf) {
 		return;
@@ -52,58 +70,58 @@ static void cache_expire_url(int sock, char * url)
 
 	idx = 0;
 
-	//16 bit: Overall length of the datagram packet, including this header
-	*((uint16_t *)(&buf[idx])) = htons(12 + 22 + url_len);
+	// 16 bit: Overall length of the datagram packet, including this header
+	put_u16(&buf[idx], 12 + 22 + url_len);
 	idx += 2;
 
-	//HTCP version. Currently at 0.0
-	buf[idx++] = 0; //Major version
-	buf[idx++] = 0; //Minor version
+	// HTCP version. Currently at 0.0
+	buf[idx++] = 0; // Major version
+	buf[idx++] = 0; // Minor version
 
-	//Length of HTCP data, including this field
-	*((uint16_t *)(&buf[idx])) = htons(8 + 22 + url_len);
+	// Length of HTCP data, including this field
+	put_u16(&buf[idx], 8 + 22 + url_len);
 	idx += 2;
 
-	//HTCP opcode CLR=4
+	// HTCP opcode CLR=4
 	buf[idx++] = 4;
-	//Reserved
+	// Reserved
 	buf[idx++] = 0;
 
-	//32 bit transaction id;
-	*((uint32_t *)(&buf[idx])) = htonl(255);
+	// 32 bit transaction id;
+	put_u32(&buf[idx], 255);
 	idx += 4;
 
 	buf[idx++] = 0;
-	buf[idx++] = 0; //HTCP reason
+	buf[idx++] = 0; // HTCP reason
 
-	//Length of the Method string
-	*((uint16_t *)(&buf[idx])) = htons(4);
+	// Length of the Method string
+	put_u16(&buf[idx], 4);
 	idx += 2;
 
-	///Method string
+	/// Method string
 	memcpy(&buf[idx], "HEAD", 4);
 	idx += 4;
 
-	//Length of the url string
-	*((uint16_t *)(&buf[idx])) = htons(url_len);
+	// Length of the url string
+	put_u16(&buf[idx], url_len);
 	idx += 2;
 
-	//Url string
+	// Url string
 	memcpy(&buf[idx], url, url_len);
 	idx += url_len;
 
-	//Length of version string
-	*((uint16_t *)(&buf[idx])) = htons(8);
+	// Length of version string
+	put_u16(&buf[idx], 8);
 	idx += 2;
 
-	//version string
+	// version string
 	memcpy(&buf[idx], "HTTP/1.1", 8);
 	idx += 8;
 
-	//Length of request headers. Currently 0 as we don't have any headers to send
-	*((uint16_t *)(&buf[idx])) = htons(0);
+	// Length of request headers. Currently 0 as we don't have any headers to send
+	put_u16(&buf[idx], 0);
 
-	if (send(sock, (void *) buf, (12 + 22 + url_len), 0) < (12 + 22 + url_len)) {
+	if (send(sock, (void *)buf, (12 + 22 + url_len), 0) < (12 + 22 + url_len)) {
 		g_logger(G_LOG_LEVEL_ERROR, "Failed to send HTCP purge for %s", url);
 	};
 
@@ -117,22 +135,22 @@ void cache_expire(int sock, const char *host, const char *uri, int x, int y, int
 		return;
 	}
 
-	char * url = (char *)malloc(1024);
+	char *url = (char *)malloc(1024);
 	snprintf(url, 1024, "http://%s%s%i/%i/%i.png", host, uri, z, x, y);
 	cache_expire_url(sock, url);
 	free(url);
 }
 
-int init_cache_expire(const char * htcphost)
+int init_cache_expire(const char *htcphost)
 {
 	struct addrinfo hints;
 	struct addrinfo *result, *rp;
-	int sfd, s;
+	int sfd = -1, s;
 
 	/* Obtain address(es) matching host/port */
 
 	memset(&hints, 0, sizeof(struct addrinfo));
-	hints.ai_family = AF_UNSPEC; /* Allow IPv4 or IPv6 */
+	hints.ai_family = AF_UNSPEC;	/* Allow IPv4 or IPv6 */
 	hints.ai_socktype = SOCK_DGRAM; /* Datagram socket */
 	hints.ai_flags = 0;
 	hints.ai_protocol = 0; /* Any protocol */
@@ -157,7 +175,7 @@ int init_cache_expire(const char * htcphost)
 		}
 
 		if (connect(sfd, rp->ai_addr, rp->ai_addrlen) != -1) {
-			break;        /* Success */
+			break; /* Success */
 		}
 
 		close(sfd);
@@ -171,5 +189,4 @@ int init_cache_expire(const char * htcphost)
 	freeaddrinfo(result); /* No longer needed */
 
 	return sfd;
-
 }

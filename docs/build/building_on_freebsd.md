@@ -4,14 +4,14 @@ This document provides users with step-by-step instructions on how to compile an
 
 Please see our [Continuous Integration script](/.github/workflows/build-and-test.yml) for more details.
 
-## FreeBSD 12/13/14
+## FreeBSD 12/13/14/15
 
 ```shell
 #!/usr/bin/env sh
 
-# Mapnik is not in the `quarterly` repository (2023.10.12)
-sudo mkdir -p /usr/local/etc/pkg/repos
-sudo sed 's#/quarterly#/latest#g' /etc/pkg/FreeBSD.conf > /usr/local/etc/pkg/repos/FreeBSD.conf
+## In case Mapnik is not in the `quarterly` repository
+# sudo mkdir -p /usr/local/etc/pkg/repos
+# sed 's#/quarterly#/latest#g' /etc/pkg/FreeBSD.conf | sudo tee /usr/local/etc/pkg/repos/FreeBSD.conf
 
 # Update installed packages
 sudo pkg upgrade --yes

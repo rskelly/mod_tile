@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2024 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2026 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -15,7 +15,9 @@
  * along with this program; If not, see http://www.gnu.org/licenses/.
  */
 
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 
 #include <sys/un.h>
 #include <unistd.h>
@@ -33,7 +35,7 @@
 
 static void copy_string(const char *src, const char **dest, size_t maxlen)
 {
-	*dest = strndup(src, maxlen);
+	*dest = strndup(src, strnlen(src, maxlen));
 
 	if (*dest == NULL) {
 		g_logger(G_LOG_LEVEL_CRITICAL, "copy_string: strndup error");
@@ -45,6 +47,16 @@ static char *name_with_section(const char *section, const char *name)
 {
 	int len;
 	char *key;
+
+	if (!section) {
+		g_logger(G_LOG_LEVEL_CRITICAL, "name_with_section: invalid section %s", section);
+		exit(7);
+	}
+
+	if (!name) {
+		g_logger(G_LOG_LEVEL_CRITICAL, "name_with_section: invalid name %s", name);
+		exit(7);
+	}
 
 	len = asprintf(&key, "%s:%s", section, name);
 
@@ -104,52 +116,82 @@ static void process_config_string(const dictionary *ini, const char *section, co
 	free(key);
 }
 
-void free_map_section(xmlconfigitem map_section)
+static void process_config_string_with_trailing_slash(const dictionary *ini, const char *section, const char *name, const char **dest, const char *notfound, size_t maxlen)
 {
-	free((void *)map_section.attribution);
-	free((void *)map_section.cors);
-	free((void *)map_section.description);
-	free((void *)map_section.file_extension);
-	free((void *)map_section.host);
-	free((void *)map_section.htcpip);
-	free((void *)map_section.mime_type);
-	free((void *)map_section.output_format);
-	free((void *)map_section.parameterization);
-	free((void *)map_section.server_alias);
-	free((void *)map_section.tile_dir);
-	free((void *)map_section.xmlfile);
-	free((void *)map_section.xmlname);
-	free((void *)map_section.xmluri);
-	bzero(&map_section, sizeof(xmlconfigitem));
+	char *key = name_with_section(section, name);
+	const char *src = iniparser_getstring(ini, key, notfound);
+	size_t src_strlen = strnlen(src, maxlen);
+
+	g_logger(G_LOG_LEVEL_DEBUG, "\tRead %s: '%s'", key, src);
+
+	// (an empty value also gets a slash; checking src[src_len - 1] would read before the string)
+	if (src_strlen == 0 || src[src_strlen - 1] != '/') {
+		char *tempsrc;
+		int len = asprintf(&tempsrc, "%s/", src);
+
+		if (len == -1) {
+			g_logger(G_LOG_LEVEL_CRITICAL, "process_config_string_with_trailing_slash: asprintf error");
+			exit(7);
+		}
+
+		g_logger(G_LOG_LEVEL_DEBUG, "\t\tAdded trailing slash to %s: '%s'", key, tempsrc);
+
+		copy_string(tempsrc, dest, maxlen);
+
+		free(tempsrc);
+	} else {
+		copy_string(src, dest, maxlen);
+	}
+
+	free(key);
+}
+
+void free_map_section(xmlconfigitem *map_section)
+{
+	free((void *)map_section->attribution);
+	free((void *)map_section->cors);
+	free((void *)map_section->description);
+	free((void *)map_section->file_extension);
+	free((void *)map_section->host);
+	free((void *)map_section->htcpip);
+	free((void *)map_section->mime_type);
+	free((void *)map_section->output_format);
+	free((void *)map_section->parameterization);
+	free((void *)map_section->server_alias);
+	free((void *)map_section->tile_dir);
+	free((void *)map_section->xmlfile);
+	free((void *)map_section->xmlname);
+	free((void *)map_section->xmluri);
+	bzero(map_section, sizeof(xmlconfigitem));
 }
 
 void free_map_sections(xmlconfigitem *map_sections)
 {
 	for (int i = 0; i < XMLCONFIGS_MAX; i++) {
 		if (map_sections[i].xmlname != NULL) {
-			free_map_section(map_sections[i]);
+			free_map_section(&map_sections[i]);
 		}
 	}
 }
 
-void free_renderd_section(renderd_config renderd_section)
+void free_renderd_section(renderd_config *renderd_section)
 {
-	free((void *)renderd_section.iphostname);
-	free((void *)renderd_section.mapnik_font_dir);
-	free((void *)renderd_section.mapnik_plugins_dir);
-	free((void *)renderd_section.name);
-	free((void *)renderd_section.pid_filename);
-	free((void *)renderd_section.socketname);
-	free((void *)renderd_section.stats_filename);
-	free((void *)renderd_section.tile_dir);
-	bzero(&renderd_section, sizeof(renderd_config));
+	free((void *)renderd_section->iphostname);
+	free((void *)renderd_section->mapnik_font_dir);
+	free((void *)renderd_section->mapnik_plugins_dir);
+	free((void *)renderd_section->name);
+	free((void *)renderd_section->pid_filename);
+	free((void *)renderd_section->socketname);
+	free((void *)renderd_section->stats_filename);
+	free((void *)renderd_section->tile_dir);
+	bzero(renderd_section, sizeof(renderd_config));
 }
 
 void free_renderd_sections(renderd_config *renderd_sections)
 {
 	for (int i = 0; i < MAX_SLAVES; i++) {
 		if (renderd_sections[i].num_threads != 0) {
-			free_renderd_section(renderd_sections[i]);
+			free_renderd_section(&renderd_sections[i]);
 		}
 	}
 }
@@ -193,7 +235,7 @@ int min_max_int_opt(const char *opt_arg, const char *opt_type_name, int minimum,
 	return opt;
 }
 
-void process_map_sections(dictionary *ini, const char *config_file_name, xmlconfigitem *maps_dest, const char *default_tile_dir, int num_threads)
+void process_map_sections(const dictionary *ini, const char *config_file_name, xmlconfigitem *maps_dest, const char *default_tile_dir, int num_threads)
 {
 	int ini_loaded_here = 0;
 	int map_section_num = -1;
@@ -241,8 +283,8 @@ void process_map_sections(dictionary *ini, const char *config_file_name, xmlconf
 			process_config_string(ini, section, "parameterize_style", &maps_dest[map_section_num].parameterization, "", PATH_MAX);
 			process_config_string(ini, section, "server_alias", &maps_dest[map_section_num].server_alias, "", PATH_MAX);
 			process_config_string(ini, section, "tiledir", &maps_dest[map_section_num].tile_dir, default_tile_dir, PATH_MAX);
-			process_config_string(ini, section, "uri", &maps_dest[map_section_num].xmluri, "", PATH_MAX);
 			process_config_string(ini, section, "xml", &maps_dest[map_section_num].xmlfile, "", PATH_MAX);
+			process_config_string_with_trailing_slash(ini, section, "uri", &maps_dest[map_section_num].xmluri, "", PATH_MAX);
 
 			process_config_double(ini, section, "scale", &maps_dest[map_section_num].scale_factor, 1.0);
 
@@ -277,9 +319,7 @@ void process_map_sections(dictionary *ini, const char *config_file_name, xmlconf
 			process_config_string(ini, section, "type", &ini_type, "png image/png png256", INILINE_MAX);
 			ini_type_copy = strndup(ini_type, INILINE_MAX);
 
-			for (ini_type_part = strtok_r(ini_type_copy, " ", &ini_type_context);
-					ini_type_part;
-					ini_type_part = strtok_r(NULL, " ", &ini_type_context)) {
+			for (ini_type_part = strtok_r(ini_type_copy, " ", &ini_type_context); ini_type_part; ini_type_part = strtok_r(NULL, " ", &ini_type_context)) {
 				switch (ini_type_part_num) {
 					case 0:
 						copy_string(ini_type_part, &maps_dest[map_section_num].file_extension, ini_type_part_maxlen);
@@ -325,16 +365,27 @@ void process_map_sections(dictionary *ini, const char *config_file_name, xmlconf
 	}
 
 	if (ini_loaded_here == 1) {
-		iniparser_freedict(ini);
+		iniparser_freedict((dictionary *)ini);
 	}
 
 	if (map_section_num < 0) {
 		g_logger(G_LOG_LEVEL_CRITICAL, "No map config sections were found in file: %s", config_file_name);
 		exit(1);
 	}
+
+	if (map_section_num > 0) {
+		for (int x = 0; x < map_section_num; x++) {
+			for (int y = x + 1; y <= map_section_num; y++) {
+				if (strncmp(maps_dest[x].xmluri, maps_dest[y].xmluri, strnlen(maps_dest[x].xmluri, PATH_MAX)) == 0) {
+					g_logger(G_LOG_LEVEL_CRITICAL, "Specified URI path ('%s' in map section '%s') must not be the parent of any subsequent map config section's URI path, e.g., '%s' in map section '%s'.", maps_dest[x].xmluri, maps_dest[x].xmlname, maps_dest[y].xmluri, maps_dest[y].xmlname);
+					exit(7);
+				}
+			}
+		}
+	}
 }
 
-void process_mapnik_section(dictionary *ini, const char *config_file_name, renderd_config *config_dest)
+void process_mapnik_section(const dictionary *ini, const char *config_file_name, renderd_config *config_dest)
 {
 	int ini_loaded_here = 0;
 	int mapnik_section_num = -1;
@@ -364,7 +415,7 @@ void process_mapnik_section(dictionary *ini, const char *config_file_name, rende
 	}
 
 	if (ini_loaded_here == 1) {
-		iniparser_freedict(ini);
+		iniparser_freedict((dictionary *)ini);
 	}
 
 	if (mapnik_section_num < 0) {
@@ -373,11 +424,11 @@ void process_mapnik_section(dictionary *ini, const char *config_file_name, rende
 	}
 }
 
-void process_renderd_sections(dictionary *ini, const char *config_file_name, renderd_config *configs_dest)
+void process_renderd_sections(const dictionary *ini, const char *config_file_name, renderd_config *configs_dest)
 {
 	int ini_loaded_here = 0;
 	int renderd_section_num = -1;
-	int renderd_socketname_maxlen = sizeof(((struct sockaddr_un *)0)->sun_path);
+	size_t renderd_socketname_maxlen = sizeof(((struct sockaddr_un *)0)->sun_path);
 
 	if (!ini) {
 		ini = iniparser_load(config_file_name);
@@ -437,14 +488,14 @@ void process_renderd_sections(dictionary *ini, const char *config_file_name, ren
 			}
 
 			if (strnlen(configs_dest[renderd_section_num].socketname, PATH_MAX) >= renderd_socketname_maxlen) {
-				g_logger(G_LOG_LEVEL_CRITICAL, "Specified socketname (%s) exceeds maximum allowed length of %i.", configs_dest[renderd_section_num].socketname, renderd_socketname_maxlen);
+				g_logger(G_LOG_LEVEL_CRITICAL, "Specified socketname (%s) exceeds maximum allowed length of %zu.", configs_dest[renderd_section_num].socketname, renderd_socketname_maxlen);
 				exit(7);
 			}
 		}
 	}
 
 	if (ini_loaded_here == 1) {
-		iniparser_freedict(ini);
+		iniparser_freedict((dictionary *)ini);
 	}
 
 	if (renderd_section_num < 0) {
@@ -457,7 +508,7 @@ void process_config_file(const char *config_file_name, int active_renderd_sectio
 {
 	extern int num_slave_threads;
 
-	extern renderd_config config;
+	extern renderd_config *config;
 	extern renderd_config config_slaves[MAX_SLAVES];
 	extern xmlconfigitem maps[XMLCONFIGS_MAX];
 
@@ -470,7 +521,7 @@ void process_config_file(const char *config_file_name, int active_renderd_sectio
 
 	g_logger(log_level, "Parsing renderd config file '%s':", config_file_name);
 
-	dictionary *ini = iniparser_load(config_file_name);
+	const dictionary *ini = iniparser_load(config_file_name);
 
 	if (!ini) {
 		g_logger(G_LOG_LEVEL_CRITICAL, "Failed to load config file (process_config_file): '%s'", config_file_name);
@@ -488,9 +539,9 @@ void process_config_file(const char *config_file_name, int active_renderd_sectio
 	process_mapnik_section(ini, config_file_name, &config_slaves[active_renderd_section_num]);
 	free_map_sections(maps);
 	process_map_sections(ini, config_file_name, maps, config_slaves[active_renderd_section_num].tile_dir, config_slaves[active_renderd_section_num].num_threads);
-	iniparser_freedict(ini);
+	iniparser_freedict((dictionary *)ini);
 
-	config = config_slaves[active_renderd_section_num];
+	config = &config_slaves[active_renderd_section_num];
 
 	for (int i = 0; i < MAX_SLAVES; i++) {
 		if (config_slaves[i].num_threads == 0) {
@@ -519,28 +570,28 @@ void process_config_file(const char *config_file_name, int active_renderd_sectio
 		g_logger(G_LOG_LEVEL_DEBUG, "\trenderd(%i): tile_dir = '%s'", i, config_slaves[i].tile_dir);
 	}
 
-	if (config.ipport > 0) {
-		g_logger(log_level, "\trenderd: ip socket = '%s':%i", config.iphostname, config.ipport);
+	if (config->ipport > 0) {
+		g_logger(log_level, "\trenderd: ip socket = '%s:%i'", config->iphostname, config->ipport);
 	} else {
-		g_logger(log_level, "\trenderd: unix socketname = '%s'", config.socketname);
+		g_logger(log_level, "\trenderd: unix socketname = '%s'", config->socketname);
 	}
 
-	g_logger(log_level, "\trenderd: num_threads = '%i'", config.num_threads);
+	g_logger(log_level, "\trenderd: num_threads = '%i'", config->num_threads);
 
 	if (active_renderd_section_num == 0 && num_slave_threads > 0) {
 		g_logger(log_level, "\trenderd: num_slave_threads = '%i'", num_slave_threads);
 	}
 
-	g_logger(log_level, "\trenderd: pid_file = '%s'", config.pid_filename);
+	g_logger(log_level, "\trenderd: pid_file = '%s'", config->pid_filename);
 
-	if (strnlen(config.stats_filename, PATH_MAX)) {
-		g_logger(log_level, "\trenderd: stats_file = '%s'", config.stats_filename);
+	if (strnlen(config->stats_filename, PATH_MAX)) {
+		g_logger(log_level, "\trenderd: stats_file = '%s'", config->stats_filename);
 	}
 
-	g_logger(log_level, "\trenderd: tile_dir = '%s'", config.tile_dir);
-	g_logger(log_level, "\tmapnik:  font_dir = '%s'", config.mapnik_font_dir);
-	g_logger(log_level, "\tmapnik:  font_dir_recurse = '%s'", config.mapnik_font_dir_recurse ? "true" : "false");
-	g_logger(log_level, "\tmapnik:  plugins_dir = '%s'", config.mapnik_plugins_dir);
+	g_logger(log_level, "\trenderd: tile_dir = '%s'", config->tile_dir);
+	g_logger(log_level, "\tmapnik:  font_dir = '%s'", config->mapnik_font_dir);
+	g_logger(log_level, "\tmapnik:  font_dir_recurse = '%s'", config->mapnik_font_dir_recurse ? "true" : "false");
+	g_logger(log_level, "\tmapnik:  plugins_dir = '%s'", config->mapnik_plugins_dir);
 
 	for (int i = 0; i < XMLCONFIGS_MAX; i++) {
 		if (maps[i].xmlname != NULL) {

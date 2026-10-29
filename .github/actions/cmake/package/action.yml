@@ -4,7 +4,7 @@ runs:
   steps:
     - name: Set `CPACK_PACKAGE_FILE_NAME`
       run: |
-        echo "CPACK_PACKAGE_FILE_NAME=mod_tile-${GITHUB_SHA}-$(echo ${{ matrix.image || matrix.os || matrix.box_freebsd || github.job }}-${{ matrix.build_system }}-${{ matrix.compiler }} | sed 's/[^0-9a-zA-Z-]/_/g')" >> ${GITHUB_ENV}
+        echo "CPACK_PACKAGE_FILE_NAME=mod_tile-${GITHUB_SHA}-$(echo ${{ matrix.image || matrix.os || (matrix.freebsd_release && format('FreeBSD {0}', matrix.freebsd_release)) || github.job }}-${{ matrix.build_system }}-${{ matrix.compiler }} | sed 's/[^0-9a-zA-Z-]/_/g')" >> ${GITHUB_ENV}
       shell: bash --noprofile --norc -euxo pipefail {0}
 
     - name: Set `CPACK_OPTIONS`
@@ -33,7 +33,7 @@ runs:
       working-directory: build
 
     - name: Upload `mod_tile` package artifact
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         if-no-files-found: ignore
         name: Package Artifacts - ${{ env.CPACK_PACKAGE_FILE_NAME }}${{ matrix.mapnik_latest && ' (Latest Mapnik)' || '' }}

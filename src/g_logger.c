@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2026 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -73,64 +73,62 @@ void g_logger(int log_level, const char *format, ...)
 		g_error("ERROR: asprintf failed in g_logger");
 	}
 
-	const GLogField log_fields_prefixed[] = {{"MESSAGE", log_message_prefixed, -1}};
-
 	if (foreground == 1) {
 		switch (log_level) {
 			// Levels >= G_LOG_LEVEL_ERROR will terminate the program
 			case G_LOG_LEVEL_ERROR:
-				g_log_writer_standard_streams(log_level, log_fields, 1, NULL);
+				g_log_writer_standard_streams((GLogLevelFlags)log_level, log_fields, 1, NULL);
 				break;
 
 			// Levels <= G_LOG_LEVEL_INFO will only show when using G_MESSAGES_DEBUG
 			case G_LOG_LEVEL_INFO:
-				g_log_writer_standard_streams(log_level, log_fields, 1, NULL);
+				g_log_writer_standard_streams((GLogLevelFlags)log_level, log_fields, 1, NULL);
 				break;
 
 			default:
-				g_log_writer_default(log_level, log_fields, 1, NULL);
+				g_log_writer_default((GLogLevelFlags)log_level, log_fields, 1, NULL);
 		}
 	} else if (g_log_writer_is_journald(fileno(stderr))) {
 		switch (log_level) {
 			// Levels >= G_LOG_LEVEL_ERROR will terminate the program
 			case G_LOG_LEVEL_ERROR:
-				g_log_writer_journald(log_level, log_fields, 1, NULL);
+				g_log_writer_journald((GLogLevelFlags)log_level, log_fields, 1, NULL);
 				break;
 
 			// Levels <= G_LOG_LEVEL_INFO will only show when using G_MESSAGES_DEBUG
 			case G_LOG_LEVEL_INFO:
-				g_log_writer_journald(log_level, log_fields, 1, NULL);
+				g_log_writer_journald((GLogLevelFlags)log_level, log_fields, 1, NULL);
 				break;
 
 			default:
-				g_log_writer_default(log_level, log_fields, 1, NULL);
+				g_log_writer_default((GLogLevelFlags)log_level, log_fields, 1, NULL);
 		}
 	} else {
 		setlogmask(LOG_UPTO(LOG_INFO));
 
 		switch (log_level) {
 			case G_LOG_LEVEL_ERROR:
-				syslog(LOG_ERR, log_message_prefixed, NULL);
+				syslog(LOG_ERR, "%s", log_message_prefixed);
 				break;
 
 			case G_LOG_LEVEL_CRITICAL:
-				syslog(LOG_CRIT, log_message_prefixed, NULL);
+				syslog(LOG_CRIT, "%s", log_message_prefixed);
 				break;
 
 			case G_LOG_LEVEL_WARNING:
-				syslog(LOG_WARNING, log_message_prefixed, NULL);
+				syslog(LOG_WARNING, "%s", log_message_prefixed);
 				break;
 
 			case G_LOG_LEVEL_MESSAGE:
-				syslog(LOG_INFO, log_message_prefixed, NULL);
+				syslog(LOG_INFO, "%s", log_message_prefixed);
 				break;
 
 			case G_LOG_LEVEL_INFO:
-				syslog(LOG_INFO, log_message_prefixed, NULL);
+				syslog(LOG_INFO, "%s", log_message_prefixed);
 				break;
 
 			case G_LOG_LEVEL_DEBUG:
-				syslog(LOG_DEBUG, log_message_prefixed, NULL);
+				syslog(LOG_DEBUG, "%s", log_message_prefixed);
 				break;
 		}
 	}

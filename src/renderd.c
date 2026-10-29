@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2026 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -122,7 +122,7 @@ enum protoCmd rx_request(struct protocol *req, int fd)
 
 	// Upgrade version 1 and 2 to  version 3
 	if (req->ver == 1) {
-		strcpy(req->xmlname, "default");
+		strcpy(req->xmlname, XMLCONFIG_DEFAULT);
 	}
 
 	if (req->ver < 3) {
@@ -153,31 +153,26 @@ enum protoCmd rx_request(struct protocol *req, int fd)
 	item->duplicates = NULL;
 	item->fd = (req->cmd == cmdDirty) ? FD_INVALID : fd;
 
-#ifdef METATILE
-	/* Round down request co-ordinates to the neareast N (should be a power of 2)
+	/* Round down request coordinates to the nearest N (should be a power of 2)
 	 * Note: request path is no longer consistent but this will be recalculated
 	 * when the metatile is being rendered.
 	 */
 	item->mx = item->req.x & ~(METATILE - 1);
 	item->my = item->req.y & ~(METATILE - 1);
-#else
-	item->mx = item->req.x;
-	item->my = item->req.y;
-#endif
 
 	return request_queue_add_request(render_request_queue, item);
 }
 
 void request_exit(void)
 {
-	// Any write to the exit pipe will trigger a graceful exit
+	// Any write to the exit pipe will trigger a graceful exit.
+	// This function is called from a signal handler, so only async-signal-safe
+	// functions (write(2)) may be used here — no g_logger, no strerror.
 	char c = 0;
-
-	g_logger(G_LOG_LEVEL_INFO, "Sending exit request");
-
-	if (write(exit_pipe_fd, &c, sizeof(c)) < 0) {
-		g_logger(G_LOG_LEVEL_ERROR, "Failed to write to the exit pipe: %s", strerror(errno));
-	}
+	// Nothing useful can be done on failure here; assign to discard (GCC ignores a (void) cast
+	// for functions declared warn_unused_result)
+	ssize_t ignored = write(exit_pipe_fd, &c, sizeof(c));
+	(void)ignored;
 }
 
 void process_loop(int listen_fd)
@@ -311,7 +306,7 @@ void *stats_writeout_thread(void * arg)
 	int noFailedAttempts = 0;
 	char tmpName[PATH_MAX];
 
-	snprintf(tmpName, sizeof(tmpName), "%s.tmp", config.stats_filename);
+	snprintf(tmpName, sizeof(tmpName), "%s.tmp", config->stats_filename);
 
 	g_logger(G_LOG_LEVEL_DEBUG, "Starting stats writeout thread: %lu", (unsigned long) pthread_self());
 
@@ -364,7 +359,7 @@ void *stats_writeout_thread(void * arg)
 
 			fclose(statfile);
 
-			if (rename(tmpName, config.stats_filename)) {
+			if (rename(tmpName, config->stats_filename)) {
 				g_logger(G_LOG_LEVEL_WARNING, "Failed to overwrite stats file: %i", errno);
 				noFailedAttempts++;
 
@@ -385,7 +380,7 @@ void *stats_writeout_thread(void * arg)
 
 int client_socket_init(renderd_config * sConfig)
 {
-	int fd, s;
+	int fd = FD_INVALID, s;
 	struct sockaddr_un * addrU;
 	struct addrinfo hints;
 	struct addrinfo *result, *rp;
@@ -439,7 +434,7 @@ int client_socket_init(renderd_config * sConfig)
 			if (connect(fd, rp->ai_addr, rp->ai_addrlen) != 0) {
 				g_logger(G_LOG_LEVEL_WARNING, "failed to connect to rendering daemon (%s), trying next ip", ipstring);
 				close(fd);
-				fd = -1;
+				fd = FD_INVALID;
 				continue;
 			} else {
 				break;
@@ -486,48 +481,99 @@ int client_socket_init(renderd_config * sConfig)
 	return fd;
 }
 
-int server_socket_init(renderd_config *sConfig)
+/**
+ * Create a TCP listening socket bound to all local addresses on the given port.
+ *
+ * An IPv6 socket with IPV6_V6ONLY disabled is preferred, as it accepts both
+ * IPv6 and IPv4 (mapped) connections. If the host does not support IPv6
+ * (e.g. it is disabled in the kernel or the container), fall back to IPv4.
+ */
+static int server_socket_init_tcp(renderd_config *sConfig)
 {
-	struct sockaddr_un addrU;
-	struct sockaddr_in6 addrI;
-	mode_t old;
-	int fd;
+	const int enable = 1;
+	const int disable = 0;
+	struct sockaddr_in addrI4;
+	struct sockaddr_in6 addrI6;
+	int fd = socket(PF_INET6, SOCK_STREAM, 0);
 
-	if (sConfig->ipport > 0) {
-		const int enable = 1;
-
-		g_logger(G_LOG_LEVEL_INFO, "Initialising TCP/IP server socket on %s:%i",
-			 sConfig->iphostname, sConfig->ipport);
-		fd = socket(PF_INET6, SOCK_STREAM, 0);
-
-		if (fd < 0) {
-			g_logger(G_LOG_LEVEL_CRITICAL, "failed to create IP socket");
-			exit(2);
-		}
-
-		if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) < 0) {
-			g_logger(G_LOG_LEVEL_CRITICAL, "setsockopt SO_REUSEADDR failed for: %s:%i",
+	if (fd >= 0) {
+		// Accept IPv4 connections too, regardless of the system default (net.ipv6.bindv6only)
+		if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &disable, sizeof(disable)) < 0) {
+			g_logger(G_LOG_LEVEL_WARNING, "setsockopt IPV6_V6ONLY failed, IPv4 clients may not be able to connect to: %s:%i",
 				 sConfig->iphostname, sConfig->ipport);
-			exit(3);
 		}
 
-		if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(enable)) < 0) {
-			g_logger(G_LOG_LEVEL_CRITICAL, "setsockopt SO_REUSEPORT failed for: %s:%i",
-				 sConfig->iphostname, sConfig->ipport);
-			exit(3);
-		}
+		memset(&addrI6, 0, sizeof(addrI6));
+		addrI6.sin6_family = AF_INET6;
+		addrI6.sin6_addr = in6addr_any;
+		addrI6.sin6_port = htons(sConfig->ipport);
 
-		bzero(&addrI, sizeof(addrI));
-		addrI.sin6_family = AF_INET6;
-		addrI.sin6_addr = in6addr_any;
-		addrI.sin6_port = htons(sConfig->ipport);
-
-		if (bind(fd, (struct sockaddr *) &addrI, sizeof(addrI)) < 0) {
-			g_logger(G_LOG_LEVEL_CRITICAL, "socket bind failed for: %s:%i",
+		if ((setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) < 0) ||
+				(setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(enable)) < 0)) {
+			g_logger(G_LOG_LEVEL_CRITICAL, "setsockopt SO_REUSEADDR/SO_REUSEPORT failed for: %s:%i",
 				 sConfig->iphostname, sConfig->ipport);
 			close(fd);
 			exit(3);
 		}
+
+		if (bind(fd, (struct sockaddr *) &addrI6, sizeof(addrI6)) == 0) {
+			return fd;
+		}
+
+		if (errno != EADDRNOTAVAIL && errno != EAFNOSUPPORT) {
+			g_logger(G_LOG_LEVEL_CRITICAL, "socket bind failed for: %s:%i (%s)",
+				 sConfig->iphostname, sConfig->ipport, strerror(errno));
+			close(fd);
+			exit(3);
+		}
+
+		g_logger(G_LOG_LEVEL_WARNING, "IPv6 socket bind failed for: %s:%i (%s), trying IPv4",
+			 sConfig->iphostname, sConfig->ipport, strerror(errno));
+		close(fd);
+	} else {
+		g_logger(G_LOG_LEVEL_INFO, "IPv6 not available (%s), using IPv4 only", strerror(errno));
+	}
+
+	fd = socket(PF_INET, SOCK_STREAM, 0);
+
+	if (fd < 0) {
+		g_logger(G_LOG_LEVEL_CRITICAL, "failed to create IP socket: %s", strerror(errno));
+		exit(2);
+	}
+
+	if ((setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) < 0) ||
+			(setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(enable)) < 0)) {
+		g_logger(G_LOG_LEVEL_CRITICAL, "setsockopt SO_REUSEADDR/SO_REUSEPORT failed for: %s:%i",
+			 sConfig->iphostname, sConfig->ipport);
+		close(fd);
+		exit(3);
+	}
+
+	memset(&addrI4, 0, sizeof(addrI4));
+	addrI4.sin_family = AF_INET;
+	addrI4.sin_addr.s_addr = htonl(INADDR_ANY);
+	addrI4.sin_port = htons(sConfig->ipport);
+
+	if (bind(fd, (struct sockaddr *) &addrI4, sizeof(addrI4)) < 0) {
+		g_logger(G_LOG_LEVEL_CRITICAL, "socket bind failed for: %s:%i (%s)",
+			 sConfig->iphostname, sConfig->ipport, strerror(errno));
+		close(fd);
+		exit(3);
+	}
+
+	return fd;
+}
+
+int server_socket_init(renderd_config *sConfig)
+{
+	struct sockaddr_un addrU;
+	mode_t old;
+	int fd = FD_INVALID;
+
+	if (sConfig->ipport > 0) {
+		g_logger(G_LOG_LEVEL_INFO, "Initialising TCP/IP server socket on %s:%i",
+			 sConfig->iphostname, sConfig->ipport);
+		fd = server_socket_init_tcp(sConfig);
 	} else {
 		g_logger(G_LOG_LEVEL_INFO, "Initialising unix server socket on %s",
 			 sConfig->socketname);
@@ -574,7 +620,7 @@ int server_socket_init(renderd_config *sConfig)
  * the slave renderer. It then blocks and waits for the response with no timeout.
  * As it only sends one request at a time (there are as many slave_thread threads as there
  * are rendering threads on the slaves) nothing gets queued on the slave and should get
- * rendererd immediately. Thus overall, requests should be nicely load balanced between
+ * rendered immediately. Thus overall, requests should be nicely load balanced between
  * all the rendering threads available both locally and in the slaves.
  */
 void *slave_thread(void * arg)
@@ -589,7 +635,20 @@ void *slave_thread(void * arg)
 	struct protocol * req_slave;
 
 	req_slave = (struct protocol *)malloc(sizeof(struct protocol));
+
+	if (req_slave == NULL) {
+		g_logger(G_LOG_LEVEL_ERROR, "slave_thread: failed to allocate memory for req_slave");
+		return NULL;
+	}
+
 	resp = (struct protocol *)malloc(sizeof(struct protocol));
+
+	if (resp == NULL) {
+		g_logger(G_LOG_LEVEL_ERROR, "slave_thread: failed to allocate memory for resp");
+		free(req_slave);
+		return NULL;
+	}
+
 	bzero(req_slave, sizeof(struct protocol));
 	bzero(resp, sizeof(struct protocol));
 
@@ -670,10 +729,27 @@ void *slave_thread(void * arg)
 			retry = 10;
 
 			while ((ret_size < sizeof(struct protocol)) && (retry > 0)) {
-				ret_size = recv(pfd, resp + ret_size, (sizeof(struct protocol)
-								       - ret_size), 0);
+				ssize_t n = recv(pfd, (char *)resp + ret_size,
+						 sizeof(struct protocol) - ret_size, 0);
 
-				if ((errno == EPIPE) || ret_size == 0) {
+				if (n < 0) {
+					if (errno == EINTR) {
+						continue;
+					}
+
+					if (errno == EPIPE) {
+						close(pfd);
+						pfd = FD_INVALID;
+						ret_size = 0;
+						g_logger(G_LOG_LEVEL_ERROR, "Pipe to Renderd slave closed");
+						break;
+					}
+
+					retry--;
+					continue;
+				}
+
+				if (n == 0) {
 					close(pfd);
 					pfd = FD_INVALID;
 					ret_size = 0;
@@ -681,7 +757,7 @@ void *slave_thread(void * arg)
 					break;
 				}
 
-				retry--;
+				ret_size += n;
 			}
 
 			if (ret_size < sizeof(struct protocol)) {
@@ -732,9 +808,8 @@ int main(int argc, char **argv)
 	int active_renderd_section_num = active_renderd_section_num_default;
 
 	int config_file_name_passed = 0;
-	int active_renderd_section_num_passed = 0;
 
-	int fd, i, j, k;
+	int fd = FD_INVALID, i, j, k;
 
 	int c;
 
@@ -776,7 +851,6 @@ int main(int argc, char **argv)
 
 			case 's': /* -s, --slave */
 				active_renderd_section_num = min_max_int_opt(optarg, "active renderd section", 0, -1);
-				active_renderd_section_num_passed = 1;
 				break;
 
 			case 'h': /* -h, --help */
@@ -816,7 +890,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	fd = server_socket_init(&config);
+	fd = server_socket_init(config);
 
 #if 0
 
@@ -844,7 +918,7 @@ int main(int argc, char **argv)
 
 	sigaction(SIGTERM, &sigExitAction, NULL);
 
-	render_init(config.mapnik_plugins_dir, config.mapnik_font_dir, config.mapnik_font_dir_recurse);
+	render_init(config->mapnik_plugins_dir, config->mapnik_font_dir, config->mapnik_font_dir_recurse);
 
 	/* unless the command line said to run in foreground mode, fork and detach from terminal */
 	if (foreground) {
@@ -855,7 +929,7 @@ int main(int argc, char **argv)
 		}
 
 		/* write pid file */
-		FILE *pidfile = fopen(config.pid_filename, "w");
+		FILE *pidfile = fopen(config->pid_filename, "w");
 
 		if (pidfile) {
 			(void) fprintf(pidfile, "%d\n", getpid());
@@ -863,7 +937,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (strnlen(config.stats_filename, PATH_MAX - 1)) {
+	if (strnlen(config->stats_filename, PATH_MAX - 1)) {
 		if (pthread_create(&stats_thread, NULL, stats_writeout_thread, NULL)) {
 			g_logger(G_LOG_LEVEL_CRITICAL, "Could not spawn stats writeout thread");
 			close(fd);
@@ -873,9 +947,15 @@ int main(int argc, char **argv)
 		g_logger(G_LOG_LEVEL_INFO, "No stats file specified in config. Stats reporting disabled");
 	}
 
-	render_threads = (pthread_t *) malloc(sizeof(pthread_t) * config.num_threads);
+	render_threads = (pthread_t *) malloc(sizeof(pthread_t) * config->num_threads);
 
-	for (i = 0; i < config.num_threads; i++) {
+	if (render_threads == NULL) {
+		g_logger(G_LOG_LEVEL_CRITICAL, "Failed to allocate memory for render threads");
+		close(fd);
+		return 7;
+	}
+
+	for (i = 0; i < config->num_threads; i++) {
 		if (pthread_create(&render_threads[i], NULL, render_thread, (void *)maps)) {
 			g_logger(G_LOG_LEVEL_CRITICAL, "Could not spawn rendering thread");
 			close(fd);
@@ -887,6 +967,12 @@ int main(int argc, char **argv)
 		// Only the master renderd opens connections to its slaves
 		k = 0;
 		slave_threads = (pthread_t *) malloc(sizeof(pthread_t) * num_slave_threads);
+
+		if (slave_threads == NULL) {
+			g_logger(G_LOG_LEVEL_CRITICAL, "Failed to allocate memory for slave threads");
+			close(fd);
+			return 7;
+		}
 
 		for (i = 1; i < MAX_SLAVES; i++) {
 			for (j = 0; j < config_slaves[i].num_threads; j++) {
@@ -901,14 +987,14 @@ int main(int argc, char **argv)
 		for (i = 0; i < MAX_SLAVES; i++) {
 			if (active_renderd_section_num != i && config_slaves[i].num_threads != 0) {
 				g_logger(G_LOG_LEVEL_DEBUG, "Freeing unused renderd config section %i: %s", i, config_slaves[i].name);
-				free_renderd_section(config_slaves[i]);
+				free_renderd_section(&config_slaves[i]);
 			}
 		}
 	}
 
 	process_loop(fd);
 
-	unlink(config.socketname);
+	unlink(config->socketname);
 	free_map_sections(maps);
 	free_renderd_sections(config_slaves);
 	close(fd);

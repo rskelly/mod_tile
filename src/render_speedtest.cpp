@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2026 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -33,16 +33,6 @@
 
 #define DEG_TO_RAD (M_PI / 180)
 #define RAD_TO_DEG (180 / M_PI)
-
-#ifndef METATILE
-#warning("Speed test not implemented for non-metatile mode. Feel free to submit fix")
-int main(int argc, char **argv)
-{
-	fprintf(stderr, "Speed test not implemented for non-metatile mode. Feel free to submit fix!\n");
-	return -1;
-}
-
-#else
 
 #if 1
 static double boundx0 = -0.5;
@@ -274,7 +264,7 @@ int main(int argc, char **argv)
 		}
 
 		if (!socketname_passed) {
-			socketname = strndup(config.socketname, PATH_MAX);
+			socketname = strndup(config->socketname, PATH_MAX);
 			socketname_passed = 1;
 		}
 	}
@@ -351,5 +341,3 @@ int main(int argc, char **argv)
 
 	return 0;
 }
-
-#endif

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2026 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -78,7 +78,7 @@ static void check_load(void)
 
 	while (avg >= maxLoad) {
 		int seconds = 5;
-		g_logger(G_LOG_LEVEL_DEBUG, "Load average %d, sleeping %is", avg, seconds);
+		g_logger(G_LOG_LEVEL_DEBUG, "Load average %.2f, sleeping %is", avg, seconds);
 		sleep(seconds);
 		avg = get_load_avg();
 	}
@@ -174,7 +174,7 @@ static struct protocol *fetch(void)
 	pthread_cond_signal(&qCondNotFull);
 	pthread_mutex_unlock(&qLock);
 
-	struct protocol *cmd = malloc(sizeof(struct protocol));
+	struct protocol *cmd = (struct protocol *)malloc(sizeof(struct protocol));
 
 	cmd->ver = 2;
 	cmd->cmd = cmdRenderBulk;
@@ -191,8 +191,10 @@ static struct protocol *fetch(void)
 
 void enqueue(const char *xmlname, int x, int y, int z)
 {
+	g_logger(G_LOG_LEVEL_DEBUG, "Enqueueing tile (xmlname=%s x=%i y=%i z=%i)", xmlname, x, y, z);
+
 	// Add this path in the local render queue
-	struct qItem *e = malloc(sizeof(struct qItem));
+	struct qItem *e = (struct qItem *)malloc(sizeof(struct qItem));
 
 	e->mapname = strdup(xmlname);
 	e->x = x;
@@ -231,7 +233,7 @@ void enqueue(const char *xmlname, int x, int y, int z)
 
 int make_connection(const char *spath)
 {
-	int fd;
+	int fd = FD_INVALID;
 
 	if (spath[0] == '/') {
 		// Create a Unix socket
@@ -250,7 +252,7 @@ int make_connection(const char *spath)
 
 		if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
 			close(fd);
-			return -1;
+			return FD_INVALID;
 		}
 
 	} else {
@@ -260,14 +262,13 @@ int make_connection(const char *spath)
 		u_int16_t port = RENDERD_PORT;
 		char port_s[6];
 		size_t spath_len = strlen(spath);
-		size_t hostname_len = d ? d - spath : spath_len;
+		size_t hostname_len = d ? (size_t)(d - spath) : spath_len;
 
 		if (!hostname_len) {
 			hostname = strdup(RENDERD_HOST);
 		} else {
-			hostname = malloc(hostname_len + sizeof('\0'));
+			hostname = strndup(spath, hostname_len);
 			assert(hostname != NULL);
-			strncpy(hostname, spath, hostname_len);
 		}
 
 		if (d) {
@@ -348,6 +349,8 @@ int make_connection(const char *spath)
 			g_logger(G_LOG_LEVEL_CRITICAL, "cannot connect to any address for %s", hostname);
 			exit(2);
 		}
+
+		free(hostname);
 	}
 
 	return fd;
@@ -374,7 +377,7 @@ void *thread_main(void *arg)
 		while (process(cmd, fd) < 1) {
 			g_logger(G_LOG_LEVEL_ERROR, "connection to renderd lost");
 			close(fd);
-			fd = -1;
+			fd = FD_INVALID;
 
 			while (fd < 0) {
 				int seconds = 30;
@@ -408,7 +411,7 @@ void spawn_workers(int num, const char *spath, int max_load)
 	qMaxLen = no_workers;
 
 	g_logger(G_LOG_LEVEL_MESSAGE, "Starting %d rendering threads", no_workers);
-	workers = calloc(sizeof(pthread_t), no_workers);
+	workers = (pthread_t *)calloc(sizeof(pthread_t), no_workers);
 
 	if (!workers) {
 		g_logger(G_LOG_LEVEL_CRITICAL, "Error allocating worker memory: %s", strerror(errno));
@@ -416,8 +419,10 @@ void spawn_workers(int num, const char *spath, int max_load)
 	}
 
 	for (i = 0; i < no_workers; i++) {
-		if (pthread_create(&workers[i], NULL, thread_main, (void *)spath)) {
-			g_logger(G_LOG_LEVEL_CRITICAL, "Thread creation failed: %s", strerror(errno));
+		int errnum = pthread_create(&workers[i], NULL, thread_main, (void *)spath);
+
+		if (errnum) {
+			g_logger(G_LOG_LEVEL_CRITICAL, "Thread creation failed: %s", strerror(errnum));
 			exit(1);
 		}
 	}

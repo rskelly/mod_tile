@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2026 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -33,16 +33,6 @@
 #include "render_submit_queue.h"
 #include "renderd_config.h"
 #include "store.h"
-
-#ifndef METATILE
-#warning("render_list not implemented for non-metatile mode. Feel free to submit fix")
-int main(int argc, char **argv)
-{
-	fprintf(stderr, "render_list not implemented for non-metatile mode. Feel free to submit fix!\n");
-	return -1;
-}
-
-#else
 
 int lon2tilex(double lon, int z)
 {
@@ -194,7 +184,7 @@ int main(int argc, char **argv)
 				break;
 
 			case 'G': /* -G, --max-lat */
-				max_lat = min_max_double_opt(optarg, "maximum latitute", -85.0511, 85.0511);
+				max_lat = min_max_double_opt(optarg, "maximum latitude", -85.0511, 85.0511);
 				max_lat_passed = 1;
 				break;
 
@@ -224,7 +214,7 @@ int main(int argc, char **argv)
 				break;
 
 			case 'g': /* -g, --min-lat */
-				min_lat = min_max_double_opt(optarg, "minimum latitute", -85.0511, 85.0511);
+				min_lat = min_max_double_opt(optarg, "minimum latitude", -85.0511, 85.0511);
 				min_lat_passed = 1;
 				break;
 
@@ -350,7 +340,7 @@ int main(int argc, char **argv)
 		}
 
 		if (!socketname_passed) {
-			socketname = strndup(config.socketname, PATH_MAX);
+			socketname = strndup(config->socketname, PATH_MAX);
 			socketname_passed = 1;
 		}
 
@@ -460,8 +450,8 @@ int main(int argc, char **argv)
 				int min_y_tmp = lat2tiley(max_lat, z);
 				current_max_x = max_x_tmp ? max_x_tmp - 1 : max_x_tmp;
 				current_max_y = max_y_tmp;
-				min_x = min_x_tmp;
-				min_y = min_y_tmp;
+				min_x = min_x_tmp - min_x_tmp % METATILE;
+				min_y = min_y_tmp - min_y_tmp % METATILE;
 			}
 
 			g_logger(G_LOG_LEVEL_MESSAGE, "Rendering all tiles for zoom %i from (%i, %i) to (%i, %i)", z, min_x, min_y, current_max_x, current_max_y);
@@ -573,5 +563,3 @@ int main(int argc, char **argv)
 
 	return 0;
 }
-
-#endif

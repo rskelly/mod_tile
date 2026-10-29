@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2026 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -91,7 +91,6 @@ parameterize_function_ptr init_parameterization_function(const char *function_na
 		return parameterize_map_language;
 	} else {
 		g_logger(G_LOG_LEVEL_WARNING, "unknown parameterization function for '%s'", function_name);
+		return NULL;
 	}
-
-	return NULL;
 }

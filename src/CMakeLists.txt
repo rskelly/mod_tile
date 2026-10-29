@@ -84,11 +84,15 @@ set(mod_tile_SRCS
   renderd_config.c
 )
 set(mod_tile_LIBS
-  ${APR_LIBRARIES}
   ${COMMON_LIBRARIES}
   ${INIPARSER_LIBRARIES}
   ${STORE_LIBRARIES}
 )
+# On macOS, linking APR binds mod_tile to the APR found here (e.g. the SDK's) even when httpd runs another
+# (e.g. Homebrew's), and the two cannot share pools. Leave APR, like httpd's own symbols, to be looked up in httpd.
+if(NOT APPLE)
+  list(INSERT mod_tile_LIBS 0 ${APR_LIBRARIES})
+endif()
 add_library(mod_tile SHARED ${mod_tile_SRCS})
 target_link_libraries(mod_tile ${mod_tile_LIBS})
 set_target_properties(mod_tile PROPERTIES PREFIX "" SUFFIX ".so")
@@ -212,30 +216,37 @@ set(gen_tile_test_SRCS
 )
 set(gen_tile_test_LIBS
   ${renderd_LIBS}
+  ${STORE_LIBRARIES}
 )
 add_executable(gen_tile_test ${gen_tile_test_SRCS})
+set_target_properties(gen_tile_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/tests)
 target_compile_definitions(gen_tile_test PRIVATE MAIN_ALREADY_DEFINED)
 target_include_directories(gen_tile_test PRIVATE ${PROJECT_SOURCE_DIR}/tests)
 target_link_libraries(gen_tile_test ${gen_tile_test_LIBS})
-set_target_properties(gen_tile_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/tests)
+
 
 #-----------------------------------------------------------------------------
 #
-#  renderd_config_test_helper
+#  unit_tests
 #
 #-----------------------------------------------------------------------------
 
-set(renderd_config_test_helper_SRCS
-  ${PROJECT_SOURCE_DIR}/tests/renderd_config_test_helper.cpp
-  g_logger.c
-  renderd_config.c
+set(unit_tests_SRCS
+  $<TARGET_OBJECTS:catch_main_o>
+  ${PROJECT_SOURCE_DIR}/tests/unit_tests.cpp
 )
-set(renderd_config_test_helper_LIBS
-  ${GLIB_LIBRARIES}
+set(unit_tests_LIBS
+  ${COMMON_LIBRARIES}
   ${INIPARSER_LIBRARIES}
+  ${LIBMAPNIK_LIBRARIES}
 )
-add_executable(renderd_config_test_helper ${renderd_config_test_helper_SRCS})
-target_link_libraries(renderd_config_test_helper ${renderd_config_test_helper_LIBS})
-set_target_properties(renderd_config_test_helper PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/tests)
+add_executable(unit_tests ${unit_tests_SRCS})
+set_target_properties(unit_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/tests)
+target_compile_definitions(unit_tests PRIVATE
+  MAPNIK_XML="${PROJECT_SOURCE_DIR}/utils/example-map/mapnik.xml"
+  RENDERD_CONF="${PROJECT_SOURCE_DIR}/etc/renderd/renderd.conf.examples"
+)
+target_include_directories(unit_tests PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/tests)
+target_link_libraries(unit_tests ${unit_tests_LIBS})
 
 endif()

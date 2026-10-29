@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2026 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -67,11 +67,7 @@
 #define RAD_TO_DEG (180 / M_PI)
 #endif
 
-#ifdef METATILE
 #define RENDER_SIZE (256 * (METATILE + 1))
-#else
-#define RENDER_SIZE (512)
-#endif
 
 using namespace mapnik;
 
@@ -89,6 +85,11 @@ struct projectionconfig {
 
 struct xmlmapconfig {
 	Map map;
+	/* Cache of parameterized Map copies keyed by the options string.
+	 * Avoids recreating PostGIS datasource objects (and their connection
+	 * pools) on every render, which would accumulate in Mapnik's global
+	 * ConnectionManager and exhaust memory under sustained load. */
+	std::map<std::string, mapnik::Map> parameterized_map_cache;
 	const char *host;
 	const char *htcphost;
 	const char *output_format;
@@ -114,7 +115,7 @@ struct projectionconfig *get_projection(const char *srs)
 
 	if (strstr(srs, "+proj=merc +a=6378137 +b=6378137") != NULL) {
 		g_logger(G_LOG_LEVEL_DEBUG, "Using web mercator projection settings");
-		prj = (struct projectionconfig *)malloc(sizeof(struct projectionconfig));
+		prj = static_cast<struct projectionconfig *>(malloc(sizeof(struct projectionconfig)));
 		prj->bound_x0 = -20037508.3428;
 		prj->bound_x1 = 20037508.3428;
 		prj->bound_y0 = -20037508.3428;
@@ -123,7 +124,7 @@ struct projectionconfig *get_projection(const char *srs)
 		prj->aspect_y = 1;
 	} else if (strcmp(srs, "+proj=eqc +lat_ts=0 +lat_0=0 +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs") == 0) {
 		g_logger(G_LOG_LEVEL_DEBUG, "Using plate carree projection settings");
-		prj = (struct projectionconfig *)malloc(sizeof(struct projectionconfig));
+		prj = static_cast<struct projectionconfig *>(malloc(sizeof(struct projectionconfig)));
 		prj->bound_x0 = -20037508.3428;
 		prj->bound_x1 = 20037508.3428;
 		prj->bound_y0 = -10018754.1714;
@@ -132,7 +133,7 @@ struct projectionconfig *get_projection(const char *srs)
 		prj->aspect_y = 1;
 	} else if (strcmp(srs, "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 +ellps=airy +datum=OSGB36 +units=m +no_defs") == 0) {
 		g_logger(G_LOG_LEVEL_DEBUG, "Using bng projection settings");
-		prj = (struct projectionconfig *)malloc(sizeof(struct projectionconfig));
+		prj = static_cast<struct projectionconfig *>(malloc(sizeof(struct projectionconfig)));
 		prj->bound_x0 = 0;
 		prj->bound_y0 = 0;
 		prj->bound_x1 = 700000;
@@ -141,7 +142,7 @@ struct projectionconfig *get_projection(const char *srs)
 		prj->aspect_y = 2;
 	} else {
 		g_logger(G_LOG_LEVEL_WARNING, "Unknown projection string, using web mercator as never the less. %s", srs);
-		prj = (struct projectionconfig *)malloc(sizeof(struct projectionconfig));
+		prj = static_cast<struct projectionconfig *>(malloc(sizeof(struct projectionconfig)));
 		prj->bound_x0 = -20037508.3428;
 		prj->bound_x1 = 20037508.3428;
 		prj->bound_y0 = -20037508.3428;
@@ -187,7 +188,7 @@ static void load_fonts(const char *font_dir, int recurse)
 static void parameterize_map_max_connections(Map &m, int num_threads)
 {
 	unsigned int i;
-	char *tmp = (char *)malloc(20);
+	char *tmp = static_cast<char *>(malloc(20));
 
 	for (i = 0; i < m.layer_count(); i++) {
 		layer &l = m.get_layer(i);
@@ -208,7 +209,7 @@ static int check_xyz(int x, int y, int z, struct xmlmapconfig *map)
 {
 	int oob, limit;
 
-	// Validate tile co-ordinates
+	// Validate tile coordinates
 	oob = (z < map->minzoom || z > map->maxzoom);
 
 	if (!oob) {
@@ -224,7 +225,6 @@ static int check_xyz(int x, int y, int z, struct xmlmapconfig *map)
 	return !oob;
 }
 
-#ifdef METATILE
 mapnik::box2d<double> tile2prjbounds(struct projectionconfig *prj, int x, int y, int z)
 {
 
@@ -247,43 +247,55 @@ static enum protoCmd render(struct xmlmapconfig *map, int x, int y, int z, char 
 	unsigned int render_size_tx = MIN(METATILE, map->prj->aspect_x * (1 << z));
 	unsigned int render_size_ty = MIN(METATILE, map->prj->aspect_y * (1 << z));
 
-	map->map.resize(render_size_tx * map->tilesize, render_size_ty * map->tilesize);
-	map->map.zoom_to_box(tile2prjbounds(map->prj, x, y, z));
+	/* Select the map to render with: a cached parameterized copy, or the base map. */
+	mapnik::Map *render_map;
 
-	if (map->map.buffer_size() == 0) { // Only set buffer size if the buffer size isn't explicitly set in the mapnik stylesheet.
-		map->map.set_buffer_size((map->tilesize >> 1) * map->scale);
+	if (map->parameterize_function) {
+		/* Look up or create a parameterized map for this options string.
+		 * Re-using a cached copy avoids calling set_datasource() on every
+		 * render, which would create a new PostGIS connection pool entry in
+		 * Mapnik's global ConnectionManager each time and leak memory. */
+		auto it = map->parameterized_map_cache.find(std::string(options));
+
+		if (it == map->parameterized_map_cache.end()) {
+			mapnik::Map parameterized_map = map->map;
+			map->parameterize_function(parameterized_map, options);
+			parameterized_map.load_fonts();
+			auto inserted = map->parameterized_map_cache.emplace(std::string(options), std::move(parameterized_map));
+			it = inserted.first;
+			g_logger(G_LOG_LEVEL_DEBUG, "Cached new parameterized map for options '%s' (cache size: %zu)", options, map->parameterized_map_cache.size());
+		}
+
+		render_map = &it->second;
+	} else {
+		render_map = &map->map;
 	}
 
-	// m.zoom(size+1);
+	render_map->resize(render_size_tx * map->tilesize, render_size_ty * map->tilesize);
+	render_map->zoom_to_box(tile2prjbounds(map->prj, x, y, z));
 
-	mapnik::image_32 buf(render_size_tx * map->tilesize, render_size_ty * map->tilesize);
+	if (render_map->buffer_size() == 0) { // Only set buffer size if the buffer size isn't explicitly set in the mapnik stylesheet.
+		render_map->set_buffer_size((map->tilesize >> 1) * map->scale);
+	}
+
+	// Zeroing is only needed without a background color, which the renderer fills the whole image with
+	mapnik::image_32 buf(render_size_tx * map->tilesize, render_size_ty * map->tilesize, !render_map->background());
 
 	try {
-		if (map->parameterize_function) {
-			Map map_parameterized = map->map;
-
-			map->parameterize_function(map_parameterized, options);
-
-			map_parameterized.load_fonts();
-
-			mapnik::agg_renderer<mapnik::image_32> ren(map_parameterized, buf, map->scale);
-			ren.apply();
-		} else {
-			mapnik::agg_renderer<mapnik::image_32> ren(map->map, buf, map->scale);
-			ren.apply();
-		}
+		mapnik::agg_renderer<mapnik::image_32> ren(*render_map, buf, map->scale);
+		ren.apply();
 	} catch (std::exception const &ex) {
 		g_logger(G_LOG_LEVEL_ERROR, "failed to render TILE %s %d %d-%d %d-%d", map->xmlname, z, x, x + render_size_tx - 1, y, y + render_size_ty - 1);
 		g_logger(G_LOG_LEVEL_ERROR, "  reason: %s", ex.what());
 		return cmdNotDone;
 	}
 
-	// Split the meta tile into an NxN grid of tiles
+	// Split the metatile into an NxN grid of tiles
 	unsigned int xx, yy;
 
 	for (yy = 0; yy < render_size_ty; yy++) {
 		for (xx = 0; xx < render_size_tx; xx++) {
-			mapnik::image_view<mapnik::image<mapnik::rgba8_t >> vw1(xx * map->tilesize, yy * map->tilesize, map->tilesize, map->tilesize, buf);
+			mapnik::image_view<mapnik::image<mapnik::rgba8_t>> vw1(xx * map->tilesize, yy * map->tilesize, map->tilesize, map->tilesize, buf);
 			struct mapnik::image_view_any vw(vw1);
 			tiles.set(xx, yy, save_to_string(vw, map->output_format));
 		}
@@ -291,53 +303,6 @@ static enum protoCmd render(struct xmlmapconfig *map, int x, int y, int z, char 
 
 	return cmdDone; // OK
 }
-
-#else  // METATILE
-static enum protoCmd render(Map &m, const char *tile_dir, char *xmlname, projection &prj, int x, int y, int z, char *outputFormat)
-{
-	char filename[PATH_MAX];
-	char tmp[PATH_MAX];
-	double p0x = x * 256.0;
-	double p0y = (y + 1) * 256.0;
-	double p1x = (x + 1) * 256.0;
-	double p1y = y * 256.0;
-
-	tiling.fromPixelToLL(p0x, p0y, z);
-	tiling.fromPixelToLL(p1x, p1y, z);
-
-	prj.forward(p0x, p0y);
-	prj.forward(p1x, p1y);
-
-	mapnik::box2d<double> bbox(p0x, p0y, p1x, p1y);
-	bbox.width(bbox.width() * 2);
-	bbox.height(bbox.height() * 2);
-	m.zoomToBox(bbox);
-
-	mapnik::image_32 buf(RENDER_SIZE, RENDER_SIZE);
-	mapnik::agg_renderer<mapnik::image_32> ren(m, buf);
-	ren.apply();
-
-	xyz_to_path(filename, sizeof(filename), tile_dir, xmlname, x, y, z);
-
-	if (mkdirp(filename)) {
-		return cmdNotDone;
-	}
-
-	snprintf(tmp, sizeof(tmp), "%s.tmp", filename);
-
-	mapnik::image_view<mapnik::image_data_32> vw(128, 128, 256, 256, buf.data());
-	g_logger(G_LOG_LEVEL_DEBUG, "Render %i %i %i %s", z, x, y, filename)
-	mapnik::save_to_file(vw, tmp, outputFormat);
-
-	if (rename(tmp, filename)) {
-		perror(tmp);
-		return cmdNotDone;
-	}
-
-	return cmdDone; // OK
-}
-
-#endif // METATILE
 
 void render_init(const char *plugins_dir, const char *font_dir, int font_dir_recurse)
 {
@@ -378,14 +343,16 @@ void *render_thread(void *arg)
 			try {
 				mapnik::load_map(maps[iMaxConfigs].map, maps[iMaxConfigs].xmlfile);
 
-				if (!maps[iMaxConfigs].parameterize_function) {
+				if (!maps[iMaxConfigs].parameterize_function)
+				{
 					maps[iMaxConfigs].map.load_fonts();
 				}
 
 				/* If we have more than 10 rendering threads configured, we need to fix
 				 * up the mapnik datasources to support larger postgres connection pools
 				 */
-				if (parentxmlconfig[iMaxConfigs].num_threads > 10) {
+				if (parentxmlconfig[iMaxConfigs].num_threads > 10)
+				{
 					g_logger(G_LOG_LEVEL_DEBUG, "Updating max_connection parameter for mapnik layers to reflect thread count");
 					parameterize_map_max_connections(maps[iMaxConfigs].map, parentxmlconfig[iMaxConfigs].num_threads);
 				}
@@ -404,7 +371,7 @@ void *render_thread(void *arg)
 			maps[iMaxConfigs].htcphost = strndup(parentxmlconfig[iMaxConfigs].htcpip, PATH_MAX);
 			maps[iMaxConfigs].xmluri = strndup(parentxmlconfig[iMaxConfigs].xmluri, PATH_MAX);
 
-			if (strlen(maps[iMaxConfigs].htcphost) > 0) {
+			if (strnlen(maps[iMaxConfigs].htcphost, PATH_MAX) > 0) {
 				maps[iMaxConfigs].htcpsock = init_cache_expire(maps[iMaxConfigs].htcphost);
 
 				if (maps[iMaxConfigs].htcpsock > 0) {
@@ -429,7 +396,7 @@ void *render_thread(void *arg)
 
 		if (item) {
 			struct protocol *req = &item->req;
-#ifdef METATILE
+
 			// At very low zoom the whole world may be smaller than METATILE
 			unsigned int size = MIN(METATILE, 1 << req->z);
 
@@ -481,13 +448,6 @@ void *render_thread(void *arg)
 									request_exit();
 								}
 							}
-
-#else // METATILE
-			ret = render(maps[i].map, maps[i].tile_dir, req->xmlname, maps[i].prj, req->x, req->y, req->z, maps[i].output_format);
-#ifdef HTCP_EXPIRE_CACHE
-			cache_expire(maps[i].htcpsock, maps[i].host, maps[i].xmluri, req->x, req->y, req->z);
-#endif // HTCP_EXPIRE_CACHE
-#endif // METATILE
 						} else {
 							g_logger(G_LOG_LEVEL_WARNING, "Received request for map layer %s is outside of acceptable bounds z(%i), x(%i), y(%i)",
 								 req->xmlname, req->z, req->x, req->y);

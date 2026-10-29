@@ -221,8 +221,8 @@ add_test(
 )
 
 add_test(
-  NAME renderd_config_test
-  COMMAND renderd_config_test
+  NAME unit_tests
+  COMMAND unit_tests
 )
 
 foreach(STORAGE_BACKEND_INDEX RANGE ${STORAGE_BACKENDS_LENGTH})
@@ -1087,28 +1087,77 @@ foreach(STORAGE_BACKEND_INDEX RANGE ${STORAGE_BACKENDS_LENGTH})
       COMMAND ${BASH} -c "
         TILE_DEFAULT_TILEJSON_CMD=\"${CURL_CMD} ${TILE_DEFAULT_TILEJSON_URL}\"
         TILE_DEFAULT_TILEJSON_OUTPUT=$(\${TILE_DEFAULT_TILEJSON_CMD})
+
         TILE_DEFAULT_TILEJSON_ATTRIBUTION=$(echo \"\${TILE_DEFAULT_TILEJSON_OUTPUT}\" | ${JQ_EXECUTABLE} -r .attribution)
-        if [ \"\${TILE_DEFAULT_TILEJSON_ATTRIBUTION}\" != \"Attribution for ${DEFAULT_MAP_NAME}\" ]; then
+        TILE_DEFAULT_TILEJSON_ATTRIBUTION_EXPECTED=\"Attribution for '${DEFAULT_MAP_NAME}' &copy;\"
+        if [ \"\${TILE_DEFAULT_TILEJSON_ATTRIBUTION}\" != \"\${TILE_DEFAULT_TILEJSON_ATTRIBUTION_EXPECTED}\" ]; then
+          echo \"Error in .attribution\";
+          echo \"Found:    \${TILE_DEFAULT_TILEJSON_ATTRIBUTION}\";
+          echo \"Expected: \${TILE_DEFAULT_TILEJSON_ATTRIBUTION_EXPECTED}\";
           exit 1;
         fi
         TILE_DEFAULT_TILEJSON_DESCRIPTION=$(echo \"\${TILE_DEFAULT_TILEJSON_OUTPUT}\" | ${JQ_EXECUTABLE} -r .description)
-        if [ \"\${TILE_DEFAULT_TILEJSON_DESCRIPTION}\" != \"Description for ${DEFAULT_MAP_NAME}\" ]; then
+        TILE_DEFAULT_TILEJSON_DESCRIPTION_EXPECTED=\"Description for '${DEFAULT_MAP_NAME}' &copy;\"
+        if [ \"\${TILE_DEFAULT_TILEJSON_DESCRIPTION}\" != \"\${TILE_DEFAULT_TILEJSON_DESCRIPTION_EXPECTED}\" ]; then
+          echo \"Error in .description\";
+          echo \"Found:    \${TILE_DEFAULT_TILEJSON_DESCRIPTION}\";
+          echo \"Expected: \${TILE_DEFAULT_TILEJSON_DESCRIPTION_EXPECTED}\";
           exit 1;
         fi
         TILE_DEFAULT_TILEJSON_NAME=$(echo \"\${TILE_DEFAULT_TILEJSON_OUTPUT}\" | ${JQ_EXECUTABLE} -r .name)
-        if [ \"\${TILE_DEFAULT_TILEJSON_NAME}\" != \"${DEFAULT_MAP_NAME}\" ]; then
+        TILE_DEFAULT_TILEJSON_NAME_EXPECTED=\"${DEFAULT_MAP_NAME}\"
+        if [ \"\${TILE_DEFAULT_TILEJSON_NAME}\" != \"\${TILE_DEFAULT_TILEJSON_NAME_EXPECTED}\" ]; then
+          echo \"Error in .name\";
+          echo \"Found:    \${TILE_DEFAULT_TILEJSON_NAME}\";
+          echo \"Expected: \${TILE_DEFAULT_TILEJSON_NAME_EXPECTED}\";
           exit 1;
         fi
         TILE_DEFAULT_TILEJSON_VERSION=$(echo \"\${TILE_DEFAULT_TILEJSON_OUTPUT}\" | ${JQ_EXECUTABLE} -r .tilejson)
-        if [ \"\${TILE_DEFAULT_TILEJSON_VERSION}\" != \"2.0.0\" ]; then
+        TILE_DEFAULT_TILEJSON_VERSION_EXPECTED=\"2.0.0\"
+        if [ \"\${TILE_DEFAULT_TILEJSON_VERSION}\" != \"\${TILE_DEFAULT_TILEJSON_VERSION_EXPECTED}\" ]; then
+          echo \"Error in .tilejson\";
+          echo \"Found:    \${TILE_DEFAULT_TILEJSON_VERSION}\";
+          echo \"Expected: \${TILE_DEFAULT_TILEJSON_VERSION_EXPECTED}\";
           exit 1;
         fi
         TILE_DEFAULT_TILEJSON_TILES_0=$(echo \"\${TILE_DEFAULT_TILEJSON_OUTPUT}\" | ${JQ_EXECUTABLE} -r .tiles[0])
-        if [ \"\${TILE_DEFAULT_TILEJSON_TILES_0}\" != \"http://localhost/tiles/${DEFAULT_MAP_NAME}/{z}/{x}/{y}.png\" ]; then
+        TILE_DEFAULT_TILEJSON_TILES_0_EXPECTED=\"http://localhost/tiles/${DEFAULT_MAP_NAME}/{z}/{x}/{y}.png\"
+        if [ \"\${TILE_DEFAULT_TILEJSON_TILES_0}\" != \"\${TILE_DEFAULT_TILEJSON_TILES_0_EXPECTED}\" ]; then
+          echo \"Error in .tiles[0]\";
+          echo \"Found:    \${TILE_DEFAULT_TILEJSON_TILES_0}\";
+          echo \"Expected: \${TILE_DEFAULT_TILEJSON_TILES_0_EXPECTED}\";
           exit 1;
         fi
         TILE_DEFAULT_TILEJSON_TILES_1=$(echo \"\${TILE_DEFAULT_TILEJSON_OUTPUT}\" | ${JQ_EXECUTABLE} -r .tiles[1])
-        if [ \"\${TILE_DEFAULT_TILEJSON_TILES_1}\" != \"http://alias/tiles/${DEFAULT_MAP_NAME}/{z}/{x}/{y}.png\" ]; then
+        TILE_DEFAULT_TILEJSON_TILES_1_EXPECTED=\"http://alias/tiles/${DEFAULT_MAP_NAME}/{z}/{x}/{y}.png\"
+        if [ \"\${TILE_DEFAULT_TILEJSON_TILES_1}\" != \"\${TILE_DEFAULT_TILEJSON_TILES_1_EXPECTED}\" ]; then
+          echo \"Error in .tiles[1]\";
+          echo \"Found:    \${TILE_DEFAULT_TILEJSON_TILES_1}\";
+          echo \"Expected: \${TILE_DEFAULT_TILEJSON_TILES_1_EXPECTED}\";
+          exit 1;
+        fi
+
+        TILE_TILEJSON_URL=\"${TILE_DEFAULT_TILEJSON_URL}\"
+        TILE_CORS_ALL_TILEJSON_CMD=\"${CURL_CMD} \${TILE_TILEJSON_URL/${DEFAULT_MAP_NAME}/cors_all}\"
+        TILE_CORS_ALL_TILEJSON_OUTPUT=$(\${TILE_CORS_ALL_TILEJSON_CMD})
+
+        TILE_CORS_ALL_TILEJSON_ATTRIBUTION=$(echo \"\${TILE_CORS_ALL_TILEJSON_OUTPUT}\" | ${JQ_EXECUTABLE} -r .attribution)
+        TILE_CORS_ALL_TILEJSON_ATTRIBUTION_EXPECTED=\"&copy;<a href='http://www.openstreetmap.org/'>OpenStreetMap</a> and \"
+        TILE_CORS_ALL_TILEJSON_ATTRIBUTION_EXPECTED+=\"<a href='http://wiki.openstreetmap.org/wiki/Contributors'>\"
+        TILE_CORS_ALL_TILEJSON_ATTRIBUTION_EXPECTED+=\"contributors</a>, \"
+        TILE_CORS_ALL_TILEJSON_ATTRIBUTION_EXPECTED+=\"<a href='http://opendatacommons.org/licenses/odbl/'>(ODbL)</a>\"
+        if [ \"\${TILE_CORS_ALL_TILEJSON_ATTRIBUTION}\" != \"\${TILE_CORS_ALL_TILEJSON_ATTRIBUTION_EXPECTED}\" ]; then
+          echo \"Error in .attribution\";
+          echo \"Found:    \${TILE_CORS_ALL_TILEJSON_ATTRIBUTION}\";
+          echo \"Expected: \${TILE_CORS_ALL_TILEJSON_ATTRIBUTION_EXPECTED}\";
+          exit 1;
+        fi
+        TILE_CORS_ALL_TILEJSON_DESCRIPTION=$(echo \"\${TILE_CORS_ALL_TILEJSON_OUTPUT}\" | ${JQ_EXECUTABLE} -r .description)
+        TILE_CORS_ALL_TILEJSON_DESCRIPTION_EXPECTED=\"\"
+        if [ \"\${TILE_CORS_ALL_TILEJSON_DESCRIPTION}\" != \"\${TILE_CORS_ALL_TILEJSON_DESCRIPTION_EXPECTED}\" ]; then
+          echo \"Error in .description\";
+          echo \"Found:    \${TILE_CORS_ALL_TILEJSON_DESCRIPTION}\";
+          echo \"Expected: \${TILE_CORS_ALL_TILEJSON_DESCRIPTION_EXPECTED}\";
           exit 1;
         fi
       "
@@ -1149,12 +1198,16 @@ set(DIRECTIVES
   "ModTileThrottlingTiles 1 string"
   "ModTileThrottlingTiles string 1"
   "ModTileVeryOldThreshold string"
+  "ModTileThrottlingRenders 1 0"
+  "ModTileThrottlingRenders 1 2000000"
+  "ModTileThrottlingTiles 1 0"
+  "ModTileThrottlingTiles 1 2000000"
 )
 set(DIRECTIVE_ERRORS
   "AddTileConfig error, URL path not defined"
   "AddTileConfig error, name of renderd config not defined"
   "AddTileConfig error, the configured zoom level lies outside of the range supported by this server"
-  "LoadTileConfigFile takes one argument, load an entire renderd config file"
+  "LoadTileConfigFile takes one argument, Load an entire renderd config file"
   "LoadTileConfigFile error, unable to open config file"
   "ModTileCacheDurationDirty argument must be an integer"
   "ModTileCacheDurationLowZoom second argument must be an integer"
@@ -1180,6 +1233,10 @@ set(DIRECTIVE_ERRORS
   "ModTileThrottlingTiles second argument must be a float"
   "ModTileThrottlingTiles first argument must be an integer"
   "ModTileVeryOldThreshold argument must be an integer"
+  "ModTileThrottlingRenders second argument (top up rate in renders per second) must be greater than 0 and at most 1000000"
+  "ModTileThrottlingRenders second argument (top up rate in renders per second) must be greater than 0 and at most 1000000"
+  "ModTileThrottlingTiles second argument (top up rate in tiles per second) must be greater than 0 and at most 1000000"
+  "ModTileThrottlingTiles second argument (top up rate in tiles per second) must be greater than 0 and at most 1000000"
 )
 list(LENGTH DIRECTIVES DIRECTIVES_LENGTH)
 math(EXPR DIRECTIVES_LENGTH "${DIRECTIVES_LENGTH} - 1")
@@ -1254,15 +1311,6 @@ target_include_directories(catch_test_common_o PRIVATE ${GLIB_INCLUDE_DIRS})
 
 #-----------------------------------------------------------------------------
 #
-#  renderd_config_test_helper
-#
-#-----------------------------------------------------------------------------
-
-# Added by ${PROJECT_SOURCE_DIR}/src/CMakeLists.txt
-# (in order to reduce redundant source and library definitions)
-
-#-----------------------------------------------------------------------------
-#
 #  Additional options for targets added hereafter
 #
 #-----------------------------------------------------------------------------
@@ -1327,15 +1375,4 @@ add_executable(render_speedtest_test
 add_executable(renderd_test
   $<TARGET_OBJECTS:catch_main_o>
   renderd_test.cpp
-)
-
-#-----------------------------------------------------------------------------
-#
-#  renderd_config_test
-#
-#-----------------------------------------------------------------------------
-
-add_executable(renderd_config_test
-  $<TARGET_OBJECTS:catch_main_o>
-  renderd_config_test.cpp
 )

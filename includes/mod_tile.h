@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2026 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -28,11 +28,13 @@
 #define DELAY_HASHTABLE_WHITELIST_SIZE 13
 /*Number of tiles in the bucket */
 #define AVAILABLE_TILE_BUCKET_SIZE 5000
-/*Number of render request in the bucket */
+/*Number of render requests in the bucket */
 #define AVAILABLE_RENDER_BUCKET_SIZE 65
-/*Number of microseconds per render request. Currently set at no more than 1 render request per 5 seconds on average */
+/*Default render top-up interval, in microseconds per render request (not a rate): 1 render request per 5 seconds on average.
+ * Equivalent to "ModTileThrottlingRenders <size> 0.2", whose second argument is in render requests per second. */
 #define RENDER_TOPUP_RATE 5000000l
-/*Number of microseconds per render request. Currently set at no more than 1 request per second on average */
+/*Default tile top-up interval, in microseconds per tile request (not a rate): 1 tile request per second on average.
+ * Equivalent to "ModTileThrottlingTiles <size> 1", whose second argument is in tile requests per second. */
 #define TILE_TOPUP_RATE 1000000l
 
 #define INILINE_MAX 256
@@ -51,7 +53,14 @@
 /* Maximum number of times we camp out before giving up */
 #define MAXCAMP 10
 
-#define DEFAULT_ATTRIBUTION "&copy;<a href=\\\"http://www.openstreetmap.org/\\\">OpenStreetMap</a> and <a href=\\\"http://wiki.openstreetmap.org/wiki/Contributors\\\">contributors</a>, <a href=\\\"http://opendatacommons.org/licenses/odbl/\\\">(ODbL)</a>"
+#define DEFAULT_ATTRIBUTION "&copy;<a href='http://www.openstreetmap.org/'>OpenStreetMap</a> and <a href='http://wiki.openstreetmap.org/wiki/Contributors'>contributors</a>, <a href='http://opendatacommons.org/licenses/odbl/'>(ODbL)</a>"
+
+enum tileState { tileUnknown,
+		 tileMissing,
+		 tileOld,
+		 tileVeryOld,
+		 tileCurrent
+	       };
 
 typedef struct delaypool_entry {
 	struct in6_addr ip_addr;
@@ -146,12 +155,7 @@ typedef struct tile_request_data {
 	struct protocol *cmd;
 	struct storage_backend *store;
 	int layerNumber;
+	enum tileState tileState;
 } tile_request_data;
-
-enum tileState { tileMissing,
-		 tileOld,
-		 tileVeryOld,
-		 tileCurrent
-	       };
 
 #endif

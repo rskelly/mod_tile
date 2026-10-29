@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2026 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -116,6 +116,7 @@ static int ro_http_proxy_tile_retrieve(struct storage_backend * store, const cha
 
 		if (res != CURLE_OK) {
 			g_logger(G_LOG_LEVEL_ERROR, "ro_http_proxy_tile_fetch: failed to retrieve file: %s", curl_easy_strerror(res));
+			free(chunk.memory);
 			ctx->cache.x = -1;
 			ctx->cache.y = -1;
 			ctx->cache.z = -1;
@@ -126,6 +127,7 @@ static int ro_http_proxy_tile_retrieve(struct storage_backend * store, const cha
 
 		if (res != CURLE_OK) {
 			g_logger(G_LOG_LEVEL_ERROR, "ro_http_proxy_tile_fetch: failed to retrieve HTTP code: %s", curl_easy_strerror(res));
+			free(chunk.memory);
 			ctx->cache.x = -1;
 			ctx->cache.y = -1;
 			ctx->cache.z = -1;
@@ -150,19 +152,31 @@ static int ro_http_proxy_tile_retrieve(struct storage_backend * store, const cha
 			case 404: {
 				if (ctx->cache.tile != NULL) {
 					free(ctx->cache.tile);
+					ctx->cache.tile = NULL;
 				}
 
+				free(chunk.memory);
 				ctx->cache.st_stat.size = -1;
 				ctx->cache.st_stat.expired = 0;
 				break;
 			}
-		}
 
+			default: {
+				// Do not cache anything for unexpected responses, otherwise the previously
+				// cached tile would be served for these coordinates
+				g_logger(G_LOG_LEVEL_ERROR, "ro_http_proxy_tile_fetch: unexpected HTTP response code %li", httpCode);
+				free(chunk.memory);
+				ctx->cache.x = -1;
+				ctx->cache.y = -1;
+				ctx->cache.z = -1;
+				return -1;
+			}
+		}
 
 		ctx->cache.x = x;
 		ctx->cache.y = y;
 		ctx->cache.z = z;
-		strcpy(ctx->cache.xmlname, xmlconfig);
+		snprintf(ctx->cache.xmlname, sizeof(ctx->cache.xmlname), "%s", xmlconfig);
 		return 1;
 	}
 }
@@ -172,7 +186,12 @@ static int ro_http_proxy_tile_read(struct storage_backend * store, const char *x
 	struct ro_http_proxy_ctx * ctx = (struct ro_http_proxy_ctx *)(store->storage_ctx);
 
 	if (ro_http_proxy_tile_retrieve(store, xmlconfig, options, x, y, z) > 0) {
-		if (ctx->cache.st_stat.size > sz) {
+		if (ctx->cache.st_stat.size < 0) {
+			// Cached 404
+			return -1;
+		}
+
+		if ((size_t)ctx->cache.st_stat.size > sz) {
 			g_logger(G_LOG_LEVEL_ERROR, "ro_http_proxy_tile_read: size was too big, overrun %lu %li", sz, ctx->cache.st_stat.size);
 			return -1;
 		}
@@ -242,8 +261,7 @@ static int ro_http_proxy_close_storage(struct storage_backend * store)
 
 	curl_easy_cleanup(ctx->ctx);
 	free(ctx);
-	free(store);
-
+	store->storage_ctx = NULL;
 	return 0;
 }
 
@@ -289,7 +307,7 @@ struct storage_backend * init_storage_ro_http_proxy(const char * connection_stri
 	pthread_mutex_lock(&qLock);
 
 	if (!done_global_init) {
-		g_logger(G_LOG_LEVEL_DEBUG, "init_storage_ro_http_proxy: Global init of curl", connection_string);
+		g_logger(G_LOG_LEVEL_DEBUG, "init_storage_ro_http_proxy: Global init of curl");
 		res = curl_global_init(CURL_GLOBAL_DEFAULT);
 		done_global_init = 1;
 	} else {
@@ -300,6 +318,7 @@ struct storage_backend * init_storage_ro_http_proxy(const char * connection_stri
 
 	if (res != CURLE_OK) {
 		g_logger(G_LOG_LEVEL_ERROR, "init_storage_ro_http_proxy: failed to initialise global curl: %s", curl_easy_strerror(res));
+		free(ctx->baseurl);
 		free(ctx);
 		free(store);
 		return NULL;
@@ -309,6 +328,7 @@ struct storage_backend * init_storage_ro_http_proxy(const char * connection_stri
 
 	if (!ctx->ctx) {
 		g_logger(G_LOG_LEVEL_ERROR, "init_storage_ro_http_proxy: failed to initialise curl");
+		free(ctx->baseurl);
 		free(ctx);
 		free(store);
 		return NULL;

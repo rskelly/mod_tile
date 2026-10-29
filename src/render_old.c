@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2026 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -35,16 +35,6 @@
 #include "renderd_config.h"
 #include "store_file_utils.h"
 #include "sys_utils.h"
-
-#ifndef METATILE
-#warning("render_old not implemented for non-metatile mode. Feel free to submit fix")
-int main(int argc, char **argv)
-{
-	fprintf(stderr, "render_old not implemented for non-metatile mode. Feel free to submit fix!\n");
-	return -1;
-}
-
-#else
 
 static int num_render = 0, num_all = 0;
 static int max_load;
@@ -357,7 +347,7 @@ int main(int argc, char **argv)
 	}
 
 	if (!socketname_passed) {
-		socketname = strndup(config.socketname, PATH_MAX);
+		socketname = strndup(config->socketname, PATH_MAX);
 		socketname_passed = 1;
 	}
 
@@ -434,5 +424,3 @@ int main(int argc, char **argv)
 
 	return 0;
 }
-
-#endif

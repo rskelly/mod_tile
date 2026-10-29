@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 - 2023 by mod_tile contributors (see AUTHORS file)
+ * Copyright (c) 2007 - 2026 by mod_tile contributors (see AUTHORS file)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -26,7 +26,7 @@ extern "C" {
 
 extern int foreground;
 
-void g_logger(int log_level, const char *format, ...);
+void g_logger(int log_level, const char *format, ...) G_GNUC_PRINTF(2, 3);
 
 const char *g_logger_level_name(int log_level);
 
